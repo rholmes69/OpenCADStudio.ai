@@ -1399,11 +1399,47 @@ impl OpenCADStudio {
     }
 
     pub(super) fn undo_active_tab(&mut self) {
-        self.undo_steps(1);
+        let i = self.active_tab;
+        self.finish_pending_history(i);
+        let steps = self.tabs[i]
+            .history
+            .undo_stack
+            .last()
+            .and_then(|top| linked_step(top.label()))
+            .map_or(1, |(k, _)| k);
+        self.undo_steps(steps);
     }
 
     pub(super) fn redo_active_tab(&mut self) {
-        self.redo_steps(1);
+        let i = self.active_tab;
+        self.finish_pending_history(i);
+        let steps = self.tabs[i]
+            .history
+            .redo_stack
+            .last()
+            .and_then(|top| linked_step(top.label()))
+            .map_or(1, |(k, n)| n + 1 - k);
+        self.redo_steps(steps);
+    }
+
+    /// Tie the last `count` undo entries into one linked group named
+    /// `name`: a single Undo or Redo takes or restores all of them. Used
+    /// where one action runs several commands that each record their own
+    /// step (an applied AICMD plan).
+    pub(super) fn link_last_undo_entries(&mut self, i: usize, name: &str, count: usize) {
+        let stack = &mut self.tabs[i].history.undo_stack;
+        let count = count.min(stack.len());
+        if count == 0 {
+            return;
+        }
+        let start = stack.len() - count;
+        for (k, entry) in stack[start..].iter_mut().enumerate() {
+            entry.set_label(if count == 1 {
+                name.to_string()
+            } else {
+                format!("{name} ({}/{count})", k + 1)
+            });
+        }
     }
 
     pub(super) fn undo_steps(&mut self, steps: usize) {
@@ -1552,6 +1588,15 @@ impl OpenCADStudio {
         self.command_line
             .push_output(crate::tf!("Redo: {last_label}").as_ref());
     }
+}
+
+/// Position `(k, n)` of an entry in a linked group (see
+/// [`OpenCADStudio::link_last_undo_entries`]); labels read `AICMD (k/n)`.
+pub(super) fn linked_step(label: &str) -> Option<(usize, usize)> {
+    let rest = label.strip_prefix("AICMD (")?.strip_suffix(')')?;
+    let (k, n) = rest.split_once('/')?;
+    let (k, n) = (k.parse::<usize>().ok()?, n.parse::<usize>().ok()?);
+    (1..=n).contains(&k).then_some((k, n))
 }
 
 pub(super) fn history_dropdown_labels(stack: &[HistorySnapshot]) -> Vec<String> {

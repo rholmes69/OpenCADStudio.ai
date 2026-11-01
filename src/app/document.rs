@@ -926,6 +926,13 @@ impl HistorySnapshot {
         }
     }
 
+    pub(super) fn set_label(&mut self, label: String) {
+        match self {
+            HistorySnapshot::Delta(d) => d.label = label,
+            HistorySnapshot::ObjectVisibility(v) => v.label = label,
+        }
+    }
+
     /// Approximate retained history memory. Entity images are shared through
     /// `Arc`; the estimate conservatively budgets their payloads and optional
     /// structure state to keep pathological histories bounded.

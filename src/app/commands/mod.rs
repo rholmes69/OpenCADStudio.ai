@@ -3,6 +3,7 @@ use crate::command::CadCommand;
 use iced::Task;
 use std::path::PathBuf;
 
+mod ai;
 mod attdef;
 mod attman;
 mod block_cmdline;
@@ -660,6 +661,9 @@ impl OpenCADStudio {
         if let Some(t) = self.dispatch_view(cmd, i) {
             return Some(t);
         }
+        if let Some(t) = self.dispatch_ai(cmd, i) {
+            return Some(t);
+        }
         if let Some(t) = self.dispatch_layerprops(cmd, i) {
             return Some(t);
         }
@@ -1197,6 +1201,10 @@ inventory::submit!(crate::command::CommandRegistration {
         "DRAWORDER_UNDER",
         "DWGPROP",
         "DWGPROPS",
+        // AI provider settings and AI-assisted commands.
+        "AISETTINGS",
+        "AICMD",
+        "AICHAT",
         "EATTEXT",
         "EXIT",
         "EXPORT",

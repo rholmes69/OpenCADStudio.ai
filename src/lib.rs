@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 #![recursion_limit = "512"]
 
+pub mod ai;
 pub mod app;
 
 /// Tests that build a headless iced renderer take this first: two made in

@@ -65,6 +65,8 @@ mod options_session;
 pub mod plugin_host;
 mod presspull_ops;
 mod drawing_properties;
+mod ai_settings;
+mod ai_assistant;
 mod purge_dialog;
 mod rename_dialog;
 mod properties;
@@ -708,6 +710,9 @@ pub(super) struct OpenCADStudio {
     block_edit_picker: Option<crate::ui::window::block_edit_picker::State>,
     rename_dialog: Option<crate::ui::window::rename::State>,
     drawing_properties: Option<crate::ui::window::drawing_properties::State>,
+    ai_settings_dialog: Option<crate::ui::window::ai_settings::State>,
+    /// AICMD / AICHAT conversation; kept while the dialog is closed.
+    ai_assistant: Option<crate::ui::window::ai_assistant::State>,
     purge_dialog: Option<crate::ui::window::purge::State>,
     /// The Purge dialog's choice, for the PURGE it runs.
     purge_only: Option<purge_dialog::PurgeOnly>,
@@ -2859,6 +2864,8 @@ pub enum ModalKind {
     Rename,
     Purge,
     DrawingProperties,
+    AiSettings,
+    AiAssistant,
     SelectSimilarSettings,
     BlockSaveAs,
     BlockVisibility,
@@ -3592,6 +3599,8 @@ pub enum Message {
     Rename(crate::ui::window::rename::RenameMsg),
     Purge(crate::ui::window::purge::PurgeMsg),
     DwgProps(crate::ui::window::drawing_properties::DwgPropsMsg),
+    AiSettings(crate::ui::window::ai_settings::AiSettingsMsg),
+    AiAssist(crate::ui::window::ai_assistant::AiAssistMsg),
     /// Select Similar settings: flip one SELECTSIMILARMODE bit.
     SelectSimilarSettingsToggle(u16),
     SelectSimilarSettingsOk,
@@ -5480,6 +5489,8 @@ impl OpenCADStudio {
             block_edit_picker: None,
             rename_dialog: None,
             drawing_properties: None,
+            ai_settings_dialog: None,
+            ai_assistant: None,
             purge_dialog: None,
             purge_only: None,
             select_similar_settings: None,

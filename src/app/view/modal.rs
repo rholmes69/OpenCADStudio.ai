@@ -110,6 +110,8 @@ impl OpenCADStudio {
             Some(K::Rename) => crate::tr!("rename-dialog", "title"),
             Some(K::Purge) => crate::tr!("purge-dialog", "title"),
             Some(K::DrawingProperties) => crate::tr!("dwgprops-dialog", "title"),
+            Some(K::AiSettings) => "AI Settings".to_string(),
+            Some(K::AiAssistant) => "AI Assistant".to_string(),
             Some(K::SelectSimilarSettings) => crate::tr!("select-similar", "title"),
             Some(K::BlockVisibility) => crate::t!("Visibility States").into_owned(),
             Some(K::BlockLookup) => crate::t!("Property Lookup Table").into_owned(),
@@ -433,6 +435,18 @@ impl OpenCADStudio {
                 let state = self.drawing_properties.as_ref()?;
                 sized_flow(ex, 560, 440, |flow| {
                     crate::ui::window::drawing_properties::view(state, flow)
+                })
+            }
+            super::super::ModalKind::AiAssistant => {
+                let state = self.ai_assistant.as_ref()?;
+                sized_flow(ex, 820, 640, |flow| {
+                    crate::ui::window::ai_assistant::view(state, flow)
+                })
+            }
+            super::super::ModalKind::AiSettings => {
+                let state = self.ai_settings_dialog.as_ref()?;
+                sized_flow(ex, 760, 600, |flow| {
+                    crate::ui::window::ai_settings::view(state, flow)
                 })
             }
             super::super::ModalKind::Purge => {
