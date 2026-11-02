@@ -57,7 +57,7 @@ fn load_image(_path: std::path::PathBuf) -> Result<Loaded, String> {
 
 impl OpenCADStudio {
     /// The drawing's unit name when it is one the dialog offers.
-    fn ai_drawing_units(&self) -> Option<&'static str> {
+    pub(in crate::app) fn ai_drawing_units(&self) -> Option<&'static str> {
         let code = self.tabs[self.active_tab]
             .scene
             .document

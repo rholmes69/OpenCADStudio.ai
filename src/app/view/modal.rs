@@ -113,6 +113,8 @@ impl OpenCADStudio {
             Some(K::AiSettings) => "AI Settings".to_string(),
             Some(K::AiAssistant) => "AI Assistant".to_string(),
             Some(K::AiImage) => "AI Image to Model".to_string(),
+            Some(K::AiCheck) => "Drawing Checker".to_string(),
+            Some(K::AiConstrain) => "AI Constraints".to_string(),
             Some(K::SelectSimilarSettings) => crate::tr!("select-similar", "title"),
             Some(K::BlockVisibility) => crate::t!("Visibility States").into_owned(),
             Some(K::BlockLookup) => crate::t!("Property Lookup Table").into_owned(),
@@ -437,6 +439,14 @@ impl OpenCADStudio {
                 sized_flow(ex, 560, 440, |flow| {
                     crate::ui::window::drawing_properties::view(state, flow)
                 })
+            }
+            super::super::ModalKind::AiCheck => {
+                let state = self.ai_check.as_ref()?;
+                sized_flow(ex, 900, 640, |flow| crate::ui::window::ai_check::view(state, flow))
+            }
+            super::super::ModalKind::AiConstrain => {
+                let state = self.ai_constrain.as_ref()?;
+                sized_flow(ex, 820, 620, |flow| crate::ui::window::ai_constrain::view(state, flow))
             }
             super::super::ModalKind::AiImage => {
                 let state = self.ai_image.as_ref()?;

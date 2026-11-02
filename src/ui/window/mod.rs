@@ -50,6 +50,8 @@ pub mod drawing_properties;
 pub mod ai_settings;
 pub mod ai_assistant;
 pub mod ai_image;
+pub mod ai_check;
+pub mod ai_constrain;
 pub mod purge;
 pub mod recovery;
 pub mod rename;

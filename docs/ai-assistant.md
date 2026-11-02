@@ -2,8 +2,9 @@
 
 Open CAD Studio can use a language model to turn plain-language requests into
 drawing edits (`AICMD`), answer questions about the open drawing (`AICHAT`),
-and turn images into geometry (`AIIMAGE`, `AISKETCH`). All of them run in the
-desktop app. The model never edits the drawing
+turn images into geometry (`AIIMAGE`, `AISKETCH`), check drawings against a
+standard (`AICHECK`) and suggest sketch constraints (`AICONSTRAIN`). All of
+them run in the desktop app. The model never edits the drawing
 itself: it proposes automation-API operations, and you review and apply them.
 
 ## Setting up a provider — `AISETTINGS`
@@ -115,3 +116,66 @@ than 0.5 % of the drawing size are joined. Review the overlay, then
 
 Both commands share one window and can be switched at the top. Hosted models
 show the estimated cost first when *Show a token and cost estimate* is on.
+
+## Drawing checker — `AICHECK`
+
+Choose a standard and press **Run checks**. The rules run locally — no model
+is needed — and report:
+
+| Rule | Finds |
+| --- | --- |
+| `DIM-VALUE` | Dimensions whose typed text shows a different number from the measured size (error) |
+| `DIM-TEXT` | Dimensions whose measurement is replaced by text without `<>` |
+| `DIM-ASSOC` | Model-space dimensions no longer associated with geometry (fix with `DIMREASSOCIATE`) |
+| `LAYER-0` | Objects on layer 0 |
+| `BYLAYER` | Objects that override their layer's color or linetype (fix with `SETBYLAYER`) |
+| `LAYER-NAME`, `LAYER-MISSING` | Layer names that break the company pattern; required layers that are missing |
+| `TEXT-HEIGHT` | Text heights outside the standard's series — ISO 3098 (1.8, 2.5, 3.5, 5, 7, 10, 14, 20 mm) or ASME Y14.2 (3 mm minimum, 6 mm titles); model-space text may be any of these times a common drawing scale |
+| `TEXT-OVERLAP` | Text and dimensions that overlap other annotation in the same space |
+| `DUPLICATE`, `ZERO-SIZE` | Exact duplicates on the same layer; zero-length lines and zero-radius circles |
+
+**Show** selects and zooms to the objects of a finding (type `AICHECK` to
+return to the list). **Erase** removes duplicates or zero-size objects as one
+undo step and runs the checks again.
+
+**AI review** sends the findings with a compact list of the dimensions, text
+and geometry to the model set for *Drawing checker*. It looks for what rules
+cannot judge — undimensioned or doubly dimensioned features, dimensions on
+hidden lines, notes and title-block text that contradict each other — and
+adds those as **AI** findings. Treat them as suggestions.
+
+A company standard is a JSON file loaded with **Load standard file…** (kept
+for later sessions); any field left out takes the ISO value:
+
+```json
+{
+  "name": "ACME drafting standard",
+  "text_heights_mm": [2.5, 3.5, 5, 7],
+  "allow_layer_zero": false,
+  "require_bylayer": true,
+  "layer_pattern": "[ASMEC]-*|DEFPOINTS",
+  "required_layers": ["A-TITLE", "A-ANNO-DIMS"],
+  "require_associative_dimensions": true,
+  "notes": "Hole positions are dimensioned from the lower-left datum."
+}
+```
+
+Layer patterns use `*` (any text), `?` (one character), `#` (one digit),
+`[ABC]` (one of) and `|` between alternatives, case-insensitively.
+
+## Constraint suggestions — `AICONSTRAIN`
+
+Select a sketch (lines, arcs, circles, 2D polylines; with nothing selected,
+every such object in model space up to 200) and run `AICONSTRAIN`. The dialog
+starts with the geometric constraints Auto Constrain finds. **Suggest** asks
+the model set for *Constraint inference* for design intent — equal sizes
+across a pattern, symmetry about a centre line, concentric features — and a
+dimension scheme a drafter would use.
+
+Every suggestion is checked against the geometry before it is listed: a
+relation is kept only if it already holds within the Auto Constrain
+tolerances, and a dimension always takes the measured size. Proposals that
+fail are listed as dropped with the reason. Tick what you want and press
+**Apply**: everything is added as one undo step. If the solver would still
+have to move anything (conflicting constraints), the step is taken back and
+nothing changes.

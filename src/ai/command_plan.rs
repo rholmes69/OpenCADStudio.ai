@@ -74,6 +74,9 @@ const DENIED_VERBS: &[&str] = &[
     "AISKETCH",
     "IMG2CAD",
     "SKETCH2CAD",
+    "AICHECK",
+    "DWGCHECK",
+    "AICONSTRAIN",
 ];
 
 pub const MAX_STEPS: usize = 40;

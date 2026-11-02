@@ -11957,6 +11957,8 @@ impl OpenCADStudio {
             Message::AiSettings(msg) => self.on_ai_settings(msg),
             Message::AiAssist(msg) => self.on_ai_assist(msg),
             Message::AiImage(msg) => self.on_ai_image(msg),
+            Message::AiCheck(msg) => self.on_ai_check(msg),
+            Message::AiConstrain(msg) => self.on_ai_constrain(msg),
             Message::SelectSimilarSettingsToggle(bit) => {
                 if let Some(mode) = self.select_similar_settings.as_mut() {
                     *mode ^= bit;

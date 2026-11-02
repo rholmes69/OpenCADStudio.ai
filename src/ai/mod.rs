@@ -21,7 +21,9 @@
 
 pub mod client;
 pub mod command_plan;
+pub mod constraint_suggest;
 pub mod drawing_chat;
+pub mod drawing_check;
 pub mod image_to_model;
 pub mod settings;
 
