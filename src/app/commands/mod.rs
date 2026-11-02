@@ -1210,6 +1210,7 @@ inventory::submit!(crate::command::CommandRegistration {
         "AICHECK",
         "AICONSTRAIN",
         "AIPART",
+        "AIPLAN",
         "EATTEXT",
         "EXIT",
         "EXPORT",

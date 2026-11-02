@@ -19,7 +19,7 @@ fn feature(task: ImageTask) -> AiFeature {
 /// Decode, downscale to [`itm::MAX_IMAGE_SIDE`] and re-encode as PNG for
 /// sending; keep the original bytes for display.
 #[cfg(not(target_arch = "wasm32"))]
-fn load_image(path: std::path::PathBuf) -> Result<Loaded, String> {
+pub(in crate::app) fn load_image(path: std::path::PathBuf) -> Result<Loaded, String> {
     let bytes = std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let decoded =
         image::load_from_memory(&bytes).map_err(|e| format!("not a readable image: {e}"))?;
@@ -51,7 +51,7 @@ fn load_image(path: std::path::PathBuf) -> Result<Loaded, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn load_image(_path: std::path::PathBuf) -> Result<Loaded, String> {
+pub(in crate::app) fn load_image(_path: std::path::PathBuf) -> Result<Loaded, String> {
     Err(crate::ai::client::DESKTOP_ONLY.into())
 }
 

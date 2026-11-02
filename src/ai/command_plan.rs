@@ -79,6 +79,8 @@ const DENIED_VERBS: &[&str] = &[
     "AICONSTRAIN",
     "AIPART",
     "TEXT2PART",
+    "AIPLAN",
+    "FLOORPLAN",
 ];
 
 pub const MAX_STEPS: usize = 40;

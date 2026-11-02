@@ -44,6 +44,10 @@ impl OpenCADStudio {
                 self.open_ai_part();
                 Some(Task::none())
             }
+            "AIPLAN" | "FLOORPLAN" => {
+                self.open_ai_plan();
+                Some(Task::none())
+            }
             _ => None,
         }
     }

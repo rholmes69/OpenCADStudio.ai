@@ -3,9 +3,9 @@
 Open CAD Studio can use a language model to turn plain-language requests into
 drawing edits (`AICMD`), answer questions about the open drawing (`AICHAT`),
 turn images into geometry (`AIIMAGE`, `AISKETCH`), check drawings against a
-standard (`AICHECK`), suggest sketch constraints (`AICONSTRAIN`) and design
-parametric parts from a description (`AIPART`). All of them run in the
-desktop app. The model never edits the drawing
+standard (`AICHECK`), suggest sketch constraints (`AICONSTRAIN`), design
+parametric parts from a description (`AIPART`) and lay out floor plans
+(`AIPLAN`). All of them run in the desktop app. The model never edits the drawing
 itself: it proposes automation-API operations, and you review and apply them.
 
 ## Setting up a provider — `AISETTINGS`
@@ -203,3 +203,37 @@ SUBTRACT and INTERSECT on layer `AI-PART`, to the right of what is already
 drawn, as one undo step. The definition is stored on the solid, so selecting
 it and running `AIPART` again opens its parameters: change them and
 **Rebuild** replaces the solid in place, again as one undo step.
+
+## Floor-plan assistant — `AIPLAN`
+
+`AIPLAN` gets a floor plan from one of three sources:
+
+- **From a brief** — "3-bedroom bungalow, 12 × 9 m, open kitchen-living, 2
+  bathrooms". The model set for *Floor plan assistant* lays out walls, doors,
+  windows and rooms. **Generate again** with a change ("make the kitchen 1 m
+  wider", "add a window to bedroom 2") refines the same plan.
+- **From a plan image** — a scanned or exported floor plan. A vision model
+  traces the walls, doors and windows and reads the room names and dimension
+  strings. A PDF plan can be exported to an image first.
+- **From selected lines** — no model needed: selected lines and open
+  polylines become wall centre lines of the given thickness, and closed
+  polylines become rooms.
+
+The preview shows walls, doors (orange), windows (blue) and each room with
+its area. Rename the rooms in the list beside it. The plan is checked before
+it is shown: every opening must fit its wall and openings must not overlap.
+
+**Insert** draws, as one undo step, on AIA-standard layers:
+
+| Layer | Content |
+| --- | --- |
+| `A-WALL` | Solid wall poché, split around openings, with closed corners |
+| `A-DOOR` | Door leaves and quarter-circle swings |
+| `A-GLAZ` | Window frames and glass lines |
+| `A-AREA` | Closed room boundaries (usable with `AREA`, `MEASUREGEOM`) |
+| `A-AREA-IDEN` | Room names and areas |
+| `A-ANNO-SCHD` | Room schedule: name, area, perimeter and total |
+| `A-WALL-3D` | Optional 3D massing: wall solids to the storey height, with lintels over doors and wall above and below windows |
+
+Plans from the model are in metres and are converted into the drawing's
+units; areas are reported in m² whenever the drawing's units are known.
