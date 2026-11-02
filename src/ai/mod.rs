@@ -22,6 +22,7 @@
 pub mod client;
 pub mod command_plan;
 pub mod drawing_chat;
+pub mod image_to_model;
 pub mod settings;
 
 pub use client::{

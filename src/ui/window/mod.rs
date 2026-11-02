@@ -49,6 +49,7 @@ pub mod quick_calc;
 pub mod drawing_properties;
 pub mod ai_settings;
 pub mod ai_assistant;
+pub mod ai_image;
 pub mod purge;
 pub mod recovery;
 pub mod rename;

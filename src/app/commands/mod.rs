@@ -1205,6 +1205,8 @@ inventory::submit!(crate::command::CommandRegistration {
         "AISETTINGS",
         "AICMD",
         "AICHAT",
+        "AIIMAGE",
+        "AISKETCH",
         "EATTEXT",
         "EXIT",
         "EXPORT",

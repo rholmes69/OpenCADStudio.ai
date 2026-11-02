@@ -537,6 +537,7 @@ impl OpenCADStudio {
             };
             if let Some(m) = request.as_object_mut() {
                 m.remove("note");
+                m.remove("bind");
             }
             request["protocol"] = json!(1);
             request["request_id"] = json!(format!("ai-{nonce}-{n}"));
@@ -561,7 +562,15 @@ impl OpenCADStudio {
             // A command left waiting for input means the plan under-specified
             // it. (The response `status` also reads "waiting_input" while
             // this dialog is open, so only the command itself is checked.)
-            if self.tabs[i].active_cmd.is_some() {
+            // `start` / `input` steps drive one command across several steps;
+            // only the last step of the plan must leave it finished.
+            let interactive = matches!(step["op"].as_str(), Some("start" | "input"));
+            let last_step = n + 1 == plan.steps.len();
+            let next_continues = plan
+                .steps
+                .get(n + 1)
+                .is_some_and(|next| next["op"] == "input");
+            if self.tabs[i].active_cmd.is_some() && (!interactive || last_step || !next_continues) {
                 let _ = self.ai_automation(&json!({
                     "protocol": 1,
                     "op": "cancel",
@@ -577,7 +586,7 @@ impl OpenCADStudio {
                 break;
             }
             let before = bindings.created.len();
-            bindings.absorb(&response);
+            bindings.absorb_step(step, &response);
             created += bindings.created.len() - before;
         }
         self.control.enabled = control_was_enabled;

@@ -70,6 +70,10 @@ const DENIED_VERBS: &[&str] = &[
     "AICHAT",
     "AISETTINGS",
     "AIOPTIONS",
+    "AIIMAGE",
+    "AISKETCH",
+    "IMG2CAD",
+    "SKETCH2CAD",
 ];
 
 pub const MAX_STEPS: usize = 40;
@@ -206,11 +210,19 @@ pub struct Bindings {
     pub last: Vec<String>,
     pub created: Vec<String>,
     pub selection: Vec<String>,
+    /// Handles saved by a step's `"bind": "<name>"`, used as `"$<name>"`.
+    /// Only plans Open CAD Studio builds itself use names; model-written
+    /// plans are limited to the three fixed placeholders.
+    pub named: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl Bindings {
-    /// Record what a finished step created.
+    /// Record what a finished step created (and its `bind` name, if any).
     pub fn absorb(&mut self, result: &Value) {
+        self.absorb_step(&Value::Null, result);
+    }
+
+    pub fn absorb_step(&mut self, step: &Value, result: &Value) {
         let mut new: Vec<String> = Vec::new();
         for key in ["/result/handles", "/result/created", "/handles", "/created"] {
             if let Some(list) = result.pointer(key).and_then(Value::as_array) {
@@ -229,29 +241,60 @@ impl Bindings {
                 );
             }
         }
+        if let Some(name) = step.get("bind").and_then(Value::as_str) {
+            self.named.insert(name.to_string(), new.clone());
+        }
         if !new.is_empty() {
             self.created.extend(new.iter().cloned());
             self.last = new;
         }
     }
+
+    fn lookup(&self, placeholder: &str) -> Option<&Vec<String>> {
+        match placeholder {
+            "$last" => Some(&self.last),
+            "$created" => Some(&self.created),
+            "$selection" => Some(&self.selection),
+            other => self.named.get(other.strip_prefix('$')?),
+        }
+    }
 }
 
-/// Replace `"$last"` / `"$created"` / `"$selection"` handle placeholders.
+/// Replace `"$last"` / `"$created"` / `"$selection"` (and `"$<name>"`)
+/// handle placeholders, given alone or inside a handle list.
 pub fn bind(step: &Value, bindings: &Bindings) -> Result<Value, String> {
     let mut step = step.clone();
-    if let Some(Value::String(s)) = step.get("handles") {
-        let handles = match s.as_str() {
-            "$last" => &bindings.last,
-            "$created" => &bindings.created,
-            "$selection" => &bindings.selection,
-            _ => return Ok(step),
-        };
+    let resolve = |s: &str| -> Result<Vec<String>, String> {
+        let handles = bindings
+            .lookup(s)
+            .ok_or_else(|| format!("{s} is not a known placeholder"))?;
         if handles.is_empty() {
             return Err(format!(
                 "{s} refers to no objects at this point of the plan"
             ));
         }
-        step["handles"] = json!(handles);
+        Ok(handles.clone())
+    };
+    match step.get("handles") {
+        Some(Value::String(s)) if s.starts_with('$') => {
+            let handles = resolve(s)?;
+            step["handles"] = json!(handles);
+        }
+        Some(Value::Array(list))
+            if list
+                .iter()
+                .any(|v| v.as_str().is_some_and(|s| s.starts_with('$'))) =>
+        {
+            let mut out = Vec::new();
+            for v in list.clone() {
+                match v.as_str() {
+                    Some(s) if s.starts_with('$') => out.extend(resolve(s)?),
+                    _ => out.push(v.as_str().unwrap_or_default().to_string()),
+                }
+            }
+            step["handles"] = json!(out);
+        }
+        _ => {}
     }
     Ok(step)
 }
@@ -327,6 +370,13 @@ pub fn describe_step(step: &Value) -> String {
         "entities_delete" => format!("Erase {}", handles(step)),
         "run" => format!("Run: {}", step["cmd"].as_str().unwrap_or("")),
         "select" => "Change the selection".to_string(),
+        "start" => format!("Start {}", step["cmd"].as_str().unwrap_or("")),
+        "input" => match step["kind"].as_str().unwrap_or("") {
+            "selection" => format!("  select {}", handles(step)),
+            "enter" => "  Enter".to_string(),
+            "point" => format!("  point {}", step.get("point").unwrap_or(&json!(null))),
+            _ => format!("  {}", step["text"].as_str().unwrap_or("")),
+        },
         other => other.to_string(),
     };
     format!("{text}{note}")
@@ -432,5 +482,15 @@ mod tests {
         assert!(bind(&step, &b).is_err());
         b.absorb(&json!({"ok":true,"result":{},"changes":[{"handle":"30","kind":"Added"},{"handle":"2A","kind":"Modified"}]}));
         assert_eq!(b.last, vec!["30".to_string()]);
+        b.absorb_step(
+            &json!({"bind":"solid"}),
+            &json!({"changes":[{"handle":"40","kind":"Added"}]}),
+        );
+        let step = json!({"op":"input","handles":["$solid","$last","2A"]});
+        assert_eq!(
+            bind(&step, &b).unwrap()["handles"],
+            json!(["40", "40", "2A"])
+        );
+        assert!(bind(&json!({"handles":"$nope"}), &b).is_err());
     }
 }

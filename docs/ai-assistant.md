@@ -1,8 +1,9 @@
 # AI assistant
 
 Open CAD Studio can use a language model to turn plain-language requests into
-drawing edits (`AICMD`) and to answer questions about the open drawing
-(`AICHAT`). Both run on the desktop app. The model never edits the drawing
+drawing edits (`AICMD`), answer questions about the open drawing (`AICHAT`),
+and turn images into geometry (`AIIMAGE`, `AISKETCH`). All of them run in the
+desktop app. The model never edits the drawing
 itself: it proposes automation-API operations, and you review and apply them.
 
 ## Setting up a provider — `AISETTINGS`
@@ -78,3 +79,39 @@ and apply exactly like an `AICMD` plan.
 `AICMD` and `AICHAT` share one window; switch between them with the buttons at
 the top. The footer shows the model, the estimated size and cost of the next
 request, and the tokens (and cost, for priced models) used so far.
+
+## Image to model — `AIIMAGE`
+
+Choose an image that shows several views of one object — an engineering
+sheet with front, top, side and iso views, or an architectural sheet with a
+plan and elevations — and press **Analyze**. The image is sent (downscaled to
+2048 px on its long side) to the vision model set for *Image to model* in
+`AISETTINGS`. Good choices are Claude, GPT or Gemini models on OpenRouter, or
+`qwen2.5vl` / `llama3.2-vision` on Ollama.
+
+The model returns each view's position on the sheet, its real size (read
+from the dimension text), its outer silhouette and its visible and hidden
+edges. The dialog draws all of it over the image so you can check it, and
+lists any disagreement between views, such as a front width that differs
+from the top width.
+
+**Insert** adds every view on its own layer (`AI-FRONT`, `AI-TOP`,
+`AI-RIGHT`, …, with hidden edges on `…-HIDDEN` in gray), keeping the
+sheet's arrangement. The views go to the right of what is already in the
+drawing and are converted into the drawing's units. With *Also build a 3D
+solid* ticked, the front, top and side silhouettes are extruded through the
+part, turned into their planes and intersected into one 3D solid next to the
+views. This needs at least two of those three views, and holes and pockets
+that do not show in the silhouettes are not cut. Everything inserted is one
+undo step.
+
+## Sketch to vector — `AISKETCH`
+
+Choose a photo of a hand sketch or a scanned drawing and press **Analyze**.
+The model traces it as one view with real sizes. With *Straighten…* ticked,
+lines within 3° of horizontal or vertical are made exact and line ends closer
+than 0.5 % of the drawing size are joined. Review the overlay, then
+**Insert**. The model set for *Sketch to vector* in `AISETTINGS` is used.
+
+Both commands share one window and can be switched at the top. Hosted models
+show the estimated cost first when *Show a token and cost estimate* is on.

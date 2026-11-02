@@ -112,6 +112,7 @@ impl OpenCADStudio {
             Some(K::DrawingProperties) => crate::tr!("dwgprops-dialog", "title"),
             Some(K::AiSettings) => "AI Settings".to_string(),
             Some(K::AiAssistant) => "AI Assistant".to_string(),
+            Some(K::AiImage) => "AI Image to Model".to_string(),
             Some(K::SelectSimilarSettings) => crate::tr!("select-similar", "title"),
             Some(K::BlockVisibility) => crate::t!("Visibility States").into_owned(),
             Some(K::BlockLookup) => crate::t!("Property Lookup Table").into_owned(),
@@ -436,6 +437,10 @@ impl OpenCADStudio {
                 sized_flow(ex, 560, 440, |flow| {
                     crate::ui::window::drawing_properties::view(state, flow)
                 })
+            }
+            super::super::ModalKind::AiImage => {
+                let state = self.ai_image.as_ref()?;
+                sized_flow(ex, 980, 760, |flow| crate::ui::window::ai_image::view(state, flow))
             }
             super::super::ModalKind::AiAssistant => {
                 let state = self.ai_assistant.as_ref()?;

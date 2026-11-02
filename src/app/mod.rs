@@ -67,6 +67,7 @@ mod presspull_ops;
 mod drawing_properties;
 mod ai_settings;
 mod ai_assistant;
+mod ai_image;
 mod purge_dialog;
 mod rename_dialog;
 mod properties;
@@ -713,6 +714,8 @@ pub(super) struct OpenCADStudio {
     ai_settings_dialog: Option<crate::ui::window::ai_settings::State>,
     /// AICMD / AICHAT conversation; kept while the dialog is closed.
     ai_assistant: Option<crate::ui::window::ai_assistant::State>,
+    /// AIIMAGE / AISKETCH dialog; kept while closed so a reading survives.
+    ai_image: Option<crate::ui::window::ai_image::State>,
     purge_dialog: Option<crate::ui::window::purge::State>,
     /// The Purge dialog's choice, for the PURGE it runs.
     purge_only: Option<purge_dialog::PurgeOnly>,
@@ -2866,6 +2869,7 @@ pub enum ModalKind {
     DrawingProperties,
     AiSettings,
     AiAssistant,
+    AiImage,
     SelectSimilarSettings,
     BlockSaveAs,
     BlockVisibility,
@@ -3601,6 +3605,7 @@ pub enum Message {
     DwgProps(crate::ui::window::drawing_properties::DwgPropsMsg),
     AiSettings(crate::ui::window::ai_settings::AiSettingsMsg),
     AiAssist(crate::ui::window::ai_assistant::AiAssistMsg),
+    AiImage(crate::ui::window::ai_image::AiImageMsg),
     /// Select Similar settings: flip one SELECTSIMILARMODE bit.
     SelectSimilarSettingsToggle(u16),
     SelectSimilarSettingsOk,
@@ -5491,6 +5496,7 @@ impl OpenCADStudio {
             drawing_properties: None,
             ai_settings_dialog: None,
             ai_assistant: None,
+            ai_image: None,
             purge_dialog: None,
             purge_only: None,
             select_similar_settings: None,

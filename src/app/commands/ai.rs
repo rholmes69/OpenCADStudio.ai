@@ -24,6 +24,14 @@ impl OpenCADStudio {
                 self.open_ai_assistant(crate::ui::window::ai_assistant::Mode::Chat);
                 Some(Task::none())
             }
+            "AIIMAGE" | "IMG2CAD" => {
+                self.open_ai_image(crate::ai::image_to_model::Task::MultiView);
+                Some(Task::none())
+            }
+            "AISKETCH" | "SKETCH2CAD" => {
+                self.open_ai_image(crate::ai::image_to_model::Task::Sketch);
+                Some(Task::none())
+            }
             _ => None,
         }
     }
