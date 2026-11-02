@@ -40,6 +40,10 @@ impl OpenCADStudio {
                 self.open_ai_constrain();
                 Some(Task::none())
             }
+            "AIPART" | "TEXT2PART" => {
+                self.open_ai_part();
+                Some(Task::none())
+            }
             _ => None,
         }
     }

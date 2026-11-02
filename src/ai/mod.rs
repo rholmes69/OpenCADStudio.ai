@@ -25,6 +25,7 @@ pub mod constraint_suggest;
 pub mod drawing_chat;
 pub mod drawing_check;
 pub mod image_to_model;
+pub mod part_gen;
 pub mod settings;
 
 pub use client::{

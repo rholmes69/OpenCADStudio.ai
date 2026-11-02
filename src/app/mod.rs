@@ -70,6 +70,7 @@ mod ai_assistant;
 mod ai_image;
 mod ai_check;
 mod ai_constrain;
+mod ai_part;
 mod purge_dialog;
 mod rename_dialog;
 mod properties;
@@ -721,6 +722,7 @@ pub(super) struct OpenCADStudio {
     /// AICHECK findings; kept while closed so Show can step out and back.
     ai_check: Option<crate::ui::window::ai_check::State>,
     ai_constrain: Option<crate::ui::window::ai_constrain::State>,
+    ai_part: Option<crate::ui::window::ai_part::State>,
     purge_dialog: Option<crate::ui::window::purge::State>,
     /// The Purge dialog's choice, for the PURGE it runs.
     purge_only: Option<purge_dialog::PurgeOnly>,
@@ -2877,6 +2879,7 @@ pub enum ModalKind {
     AiImage,
     AiCheck,
     AiConstrain,
+    AiPart,
     SelectSimilarSettings,
     BlockSaveAs,
     BlockVisibility,
@@ -3615,6 +3618,7 @@ pub enum Message {
     AiImage(crate::ui::window::ai_image::AiImageMsg),
     AiCheck(crate::ui::window::ai_check::AiCheckMsg),
     AiConstrain(crate::ui::window::ai_constrain::AiConstrainMsg),
+    AiPart(crate::ui::window::ai_part::AiPartMsg),
     /// Select Similar settings: flip one SELECTSIMILARMODE bit.
     SelectSimilarSettingsToggle(u16),
     SelectSimilarSettingsOk,
@@ -5508,6 +5512,7 @@ impl OpenCADStudio {
             ai_image: None,
             ai_check: None,
             ai_constrain: None,
+            ai_part: None,
             purge_dialog: None,
             purge_only: None,
             select_similar_settings: None,

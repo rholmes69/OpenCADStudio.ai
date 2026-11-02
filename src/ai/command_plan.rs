@@ -77,6 +77,8 @@ const DENIED_VERBS: &[&str] = &[
     "AICHECK",
     "DWGCHECK",
     "AICONSTRAIN",
+    "AIPART",
+    "TEXT2PART",
 ];
 
 pub const MAX_STEPS: usize = 40;

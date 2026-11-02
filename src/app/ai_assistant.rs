@@ -544,6 +544,17 @@ impl OpenCADStudio {
             if !document_id.is_null() {
                 request["document_id"] = document_id.clone();
             }
+            // A command started with objects already selected skips its
+            // selection prompt; the plan always feeds the selection itself.
+            if step["op"] == "start" {
+                let _ = self.ai_automation(&json!({
+                    "protocol": 1,
+                    "op": "select",
+                    "clear": true,
+                    "request_id": format!("ai-{nonce}-{n}-clear"),
+                    "document_id": document_id,
+                }));
+            }
             let response = self.ai_automation(&request);
             self.finish_pending_history(i);
             let failed = response["ok"] == false || response["status"] == "failed";

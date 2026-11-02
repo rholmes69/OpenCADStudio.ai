@@ -3,8 +3,9 @@
 Open CAD Studio can use a language model to turn plain-language requests into
 drawing edits (`AICMD`), answer questions about the open drawing (`AICHAT`),
 turn images into geometry (`AIIMAGE`, `AISKETCH`), check drawings against a
-standard (`AICHECK`) and suggest sketch constraints (`AICONSTRAIN`). All of
-them run in the desktop app. The model never edits the drawing
+standard (`AICHECK`), suggest sketch constraints (`AICONSTRAIN`) and design
+parametric parts from a description (`AIPART`). All of them run in the
+desktop app. The model never edits the drawing
 itself: it proposes automation-API operations, and you review and apply them.
 
 ## Setting up a provider — `AISETTINGS`
@@ -179,3 +180,26 @@ fail are listed as dropped with the reason. Tick what you want and press
 **Apply**: everything is added as one undo step. If the solver would still
 have to move anything (conflicting constraints), the step is taken back and
 nothing changes.
+
+## Text to part — `AIPART`
+
+Describe a part — "M8 hex bolt, 40 mm long", "flange Ø80 × 10 with a Ø40 hub
+20 high, Ø10 bore and four M8 clearance holes on a 60 PCD", "L-bracket 3 mm
+sheet, 50 × 50, two 6 mm holes per leg" — and press **Generate**. The model
+set for *Text to part* writes a parametric definition: named sizes, and
+bodies that are boxes, cylinders, regular prisms, extruded profiles or
+revolved half-sections, with circular or linear patterns, joined (`add`),
+removed (`cut`) or intersected. Threads are modelled at their nominal
+diameter.
+
+Review the parameters before anything is drawn. Each field takes a number or
+an expression of other parameters (`D/2 + 5`), and sizes that depend on one
+you change follow it. A value that would make a body impossible — a negative
+diameter — is refused next to its field. **Generate again** with a new
+request refines the current definition.
+
+**Insert** builds the solid with the program's own EXTRUDE, REVOLVE, UNION,
+SUBTRACT and INTERSECT on layer `AI-PART`, to the right of what is already
+drawn, as one undo step. The definition is stored on the solid, so selecting
+it and running `AIPART` again opens its parameters: change them and
+**Rebuild** replaces the solid in place, again as one undo step.
