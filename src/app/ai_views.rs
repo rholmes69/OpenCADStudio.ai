@@ -10,6 +10,9 @@ use crate::ai::{AiFeature, ChatMessage, ChatRequest};
 use crate::ui::window::ai_views::{AiViewsMsg, DimMode, State};
 use iced::Task;
 
+/// The dimension style AIVIEWS dimensions use.
+const DIM_STYLE: &str = "AI-VIEWS";
+
 impl OpenCADStudio {
     /// The solid's triangles, exact edges and per-view silhouettes.
     fn ai_views_solid(
@@ -284,6 +287,45 @@ impl OpenCADStudio {
     }
 
     /// Insert the views (and dimensions) to the right of the drawing.
+    /// Make `AI-VIEWS` (the current style scaled so its text is
+    /// `text_height`) current; returns the style that was current.
+    fn ai_views_use_dim_style(&mut self, text_height: f64, asme: bool) -> (String, codec::Handle) {
+        let i = self.active_tab;
+        let doc = &mut self.tabs[i].scene.document;
+        let previous = (
+            doc.header.current_dimstyle_name.clone(),
+            doc.header.current_dimstyle_handle,
+        );
+        let base = doc
+            .dim_styles
+            .iter()
+            .find(|s| s.name.eq_ignore_ascii_case(previous.0.trim()))
+            .or_else(|| doc.dim_styles.iter().next())
+            .cloned();
+        let mut style = base.unwrap_or_else(|| codec::tables::DimStyle::new(DIM_STYLE));
+        let txt = if style.dimtxt > 1e-9 {
+            style.dimtxt
+        } else {
+            2.5
+        };
+        style.dimscale = text_height / txt;
+        if asme {
+            // ASME Y14.5 uses a decimal point.
+            style.dimdsep = i16::from(b'.');
+        }
+        style.name = DIM_STYLE.to_string();
+        let handle = match doc.dim_styles.get(DIM_STYLE) {
+            Some(existing) => existing.handle,
+            None => doc.allocate_handle(),
+        };
+        style.handle = handle;
+        doc.dim_styles.add_or_replace(style);
+        doc.header.current_dimstyle_name = DIM_STYLE.to_string();
+        doc.header.current_dimstyle_handle = handle;
+        crate::scene::creation_style::sync_header_dim_vars(doc);
+        previous
+    }
+
     pub(in crate::app) fn ai_views_insert(&mut self) -> Result<String, String> {
         let i = self.active_tab;
         let state = self.ai_views.as_ref().ok_or("nothing to insert")?;
@@ -326,11 +368,23 @@ impl OpenCADStudio {
             if layer.is_empty() { "0" } else { &layer },
         ));
         let n = state.views.len();
-        self.apply_ai_plan(&StepPlan {
+        // Dimension text in proportion to the views: a copy of the current
+        // style with its DIMSCALE set, current only while the plan runs.
+        let asme = state.dim_mode == DimMode::Ai && state.standard.starts_with("ASME");
+        let previous =
+            (dim_count > 0).then(|| self.ai_views_use_dim_style(text_height * 0.6, asme));
+        let result = self.apply_ai_plan(&StepPlan {
             summary: "drawing views".into(),
             message: None,
             steps,
-        })?;
+        });
+        if let Some((name, handle)) = previous {
+            let doc = &mut self.tabs[i].scene.document;
+            doc.header.current_dimstyle_name = name;
+            doc.header.current_dimstyle_handle = handle;
+            crate::scene::creation_style::sync_header_dim_vars(doc);
+        }
+        result?;
         Ok(format!(
             "inserted {n} view(s){} on AI-VIEW layers; one UNDO removes them.",
             if dim_count > 0 {
@@ -461,5 +515,83 @@ mod tests {
         app.ai_views_insert().expect("inserts");
         let dims = app.automation_op(r#"{"op":"query","type":"Dimension"}"#);
         assert_eq!(dims["count"], 2, "{dims}");
+    }
+
+    /// Manual run: build a part definition from `OCS_PART_JSON`, make its
+    /// views and either write the dimension prompt (`OCS_VIEWS_PROMPT`) or
+    /// apply a scheme reply (`OCS_VIEWS_REPLY`), then save to `OCS_VIEWS_OUT`.
+    #[test]
+    fn manual_views_of_a_part_from_env() {
+        let Ok(def) = std::env::var("OCS_PART_JSON") else {
+            return;
+        };
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        let i = app.active_tab;
+        app.tabs[i].scene.document.header.insertion_units = 4;
+        let part = crate::ai::part_gen::parse_part(&std::fs::read_to_string(def).unwrap()).unwrap();
+        let steps = crate::ai::part_gen::plan(&part, [0.0, 0.0, 0.0], "0").unwrap();
+        app.apply_ai_plan(&StepPlan {
+            summary: String::new(),
+            message: None,
+            steps,
+        })
+        .unwrap();
+        let q = app.automation_op(r#"{"op":"query","type":"3D Solid"}"#);
+        let h = codec::Handle::new(
+            u64::from_str_radix(q["entities"][0]["handle"].as_str().unwrap(), 16).unwrap(),
+        );
+        app.tabs[i].scene.deselect_all();
+        app.tabs[i].scene.select_entity(h, false);
+        app.open_ai_views();
+        let standard = std::env::var("OCS_VIEWS_STANDARD").unwrap_or("ASME Y14.5".into());
+        let st = app.ai_views.as_mut().unwrap();
+        st.standard = standard.clone();
+        let spacing = OpenCADStudio::ai_views_spacing(&st.views);
+        if let Ok(path) = std::env::var("OCS_VIEWS_PROMPT") {
+            std::fs::write(path, dv::dims_prompt(&st.views, &standard)).unwrap();
+        }
+        if let Ok(path) = std::env::var("OCS_VIEWS_REPLY") {
+            let reply = std::fs::read_to_string(path).unwrap();
+            st.dim_mode = DimMode::Ai;
+            st.ai_dims = Some(dv::parse_dims(&reply, &st.views, spacing).unwrap());
+            eprintln!("AI DIMS {}", st.ai_dims.as_ref().unwrap().len());
+        }
+        eprintln!("{}", app.ai_views_insert().unwrap());
+        if let Ok(out) = std::env::var("OCS_VIEWS_OUT") {
+            app.tabs[i].scene.deselect_all();
+            app.automation_op(
+                &serde_json::json!({"op":"entities_delete","handles":[q["entities"][0]["handle"]]})
+                    .to_string(),
+            );
+            eprintln!(
+                "{}",
+                app.automation_op(&serde_json::json!({"op":"save","path":out}).to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn hidden_lines_are_dashed_and_dimensions_scale_with_the_views() {
+        let mut app = OpenCADStudio::new_for_test();
+        let h = plate_with_hole(&mut app);
+        let i = app.active_tab;
+        app.tabs[i].scene.select_entity(h, false);
+        app.open_ai_views();
+        app.ai_views_insert().expect("inserts");
+        let doc = &app.tabs[i].scene.document;
+        let hidden: Vec<_> = doc
+            .entities()
+            .filter(|e| e.common().layer == dv::L_HIDDEN)
+            .collect();
+        assert!(!hidden.is_empty());
+        assert!(hidden.iter().all(|e| e.common().linetype == "HIDDEN"));
+        assert!(doc.line_types.contains("HIDDEN"), "loaded from the catalog");
+        let style = doc.dim_styles.get(DIM_STYLE).expect("style made");
+        assert!(style.dimscale > 0.0 && (style.dimscale - 1.0).abs() > 1e-6);
+        assert_ne!(
+            doc.header.current_dimstyle_name, DIM_STYLE,
+            "the user's current style is restored"
+        );
     }
 }

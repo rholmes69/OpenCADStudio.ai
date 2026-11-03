@@ -83,6 +83,27 @@ impl OpenCADStudio {
         };
 
         let i = self.active_tab;
+        // A named linetype must be in the drawing or the standard catalog.
+        {
+            let document = &self.tabs[i].scene.document;
+            for entity in &built {
+                let lt = entity.common().linetype.trim();
+                if lt.is_empty()
+                    || ["bylayer", "byblock", "continuous"]
+                        .contains(&lt.to_ascii_lowercase().as_str())
+                    || document.line_types.contains(lt)
+                {
+                    continue;
+                }
+                let mut probe = codec::Document::new();
+                if !crate::io::linetypes::ensure_catalog_linetype(&mut probe, lt) {
+                    return Err(failure(
+                        "invalid_linetype",
+                        format!("Linetype '{lt}' is not in the drawing or the standard catalog"),
+                    ));
+                }
+            }
+        }
         self.push_undo_snapshot(i, "ENTITIESCREATE");
         // Auto-create missing layers (Catalog §1.4: "create layer if missing")
         // after the undo snapshot, so undo removes them together with the
@@ -102,6 +123,12 @@ impl OpenCADStudio {
                     .add(layer_record)
                     .map_err(|e| failure("layer_failed", e))?;
                 layers_created.push(layer);
+            }
+            for entity in &built {
+                let lt = entity.common().linetype.clone();
+                if !lt.is_empty() {
+                    crate::io::linetypes::ensure_catalog_linetype(document, &lt);
+                }
             }
         }
         let handles: Vec<String> = {

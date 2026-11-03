@@ -397,6 +397,10 @@ pub fn project(
                 }
             }
         };
+        // Classify short pieces, then flip isolated one- or two-piece runs:
+        // an edge lying on two surfaces (where cylinders meet) grazes them
+        // and would otherwise flicker between visible and hidden.
+        let mut pieces: Vec<(P3, P3, bool)> = Vec::new();
         for w in poly.windows(2) {
             let n = ((len3(sub3(w[1], w[0])) / piece).ceil() as usize).clamp(1, 400);
             for k in 0..n {
@@ -404,7 +408,12 @@ pub fn project(
                     lerp3(w[0], w[1], k as f64 / n as f64),
                     lerp3(w[0], w[1], (k + 1) as f64 / n as f64),
                 );
-                let h = hidden(lerp3(p0, p1, 0.5), view, solid, eps);
+                pieces.push((p0, p1, hidden(lerp3(p0, p1, 0.5), view, solid, eps)));
+            }
+        }
+        smooth_flags(&mut pieces);
+        for (p0, p1, h) in pieces {
+            {
                 match &mut current {
                     Some((ch, run)) if *ch == h => run.push(to2(p1)),
                     _ => {
@@ -456,12 +465,24 @@ pub fn project(
             vis_unique.push(s);
         }
     }
+    // An edge drawn over a visible circle (a curve lying on a cylinder
+    // seen end-on) adds nothing.
+    let circles: Vec<(P2, f64)> = vis_unique
+        .iter()
+        .filter_map(|s| match s {
+            Shape2::Circle { c, r } => Some((*c, *r)),
+            _ => None,
+        })
+        .collect();
+    let on_circle = |s: &Shape2| on_any_circle(s, &circles, tol * 5.0);
+    vis_unique.retain(|s| matches!(s, Shape2::Circle { .. }) || !on_circle(s));
     let mut hidden: Vec<Shape2> = Vec::new();
     for s in classify_all(&hidden_runs) {
-        if !vis_unique
-            .iter()
-            .chain(hidden.iter())
-            .any(|t| same_shape(t, &s, tol * 2.0))
+        if !on_circle(&s)
+            && !vis_unique
+                .iter()
+                .chain(hidden.iter())
+                .any(|t| same_shape(t, &s, tol * 2.0))
         {
             hidden.push(s);
         }
@@ -483,6 +504,49 @@ pub fn project(
         lo,
         hi,
     }
+}
+
+/// Flip runs of one or two pieces that sit between two runs of the other kind.
+fn smooth_flags(pieces: &mut [(P3, P3, bool)]) {
+    let mut runs: Vec<(usize, usize)> = Vec::new(); // (start, len)
+    for (i, p) in pieces.iter().enumerate() {
+        match runs.last_mut() {
+            Some((s, l)) if pieces[*s].2 == p.2 => *l += 1,
+            _ => runs.push((i, 1)),
+        }
+    }
+    for k in 1..runs.len().saturating_sub(1) {
+        let (s, l) = runs[k];
+        let (before, after) = (runs[k - 1], runs[k + 1]);
+        if l <= 2 && before.1 >= l && after.1 >= l {
+            let flag = pieces[before.0].2;
+            for p in &mut pieces[s..s + l] {
+                p.2 = flag;
+            }
+        }
+    }
+}
+
+/// Whether every point of `s` lies on one of the circles.
+fn on_any_circle(s: &Shape2, circles: &[(P2, f64)], tol: f64) -> bool {
+    let pts: Vec<P2> = match s {
+        Shape2::Line { a, b } => vec![*a, *b, [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]],
+        Shape2::Polyline { pts } => pts.clone(),
+        Shape2::Arc { c, r, start, end } => {
+            let mid = (start + end) / 2.0;
+            [*start, mid, *end]
+                .iter()
+                .map(|t| {
+                    let t = t.to_radians();
+                    [c[0] + r * t.cos(), c[1] + r * t.sin()]
+                })
+                .collect()
+        }
+        Shape2::Circle { .. } => return false,
+    };
+    circles
+        .iter()
+        .any(|(c, r)| pts.iter().all(|p| (d2(*p, *c) - r).abs() <= tol))
 }
 
 fn same_shape(a: &Shape2, b: &Shape2, tol: f64) -> bool {
@@ -550,6 +614,8 @@ fn circle_name(kind: ViewKind, n: usize) -> String {
 /// `entities_create` steps for the views, their centre marks and labels.
 pub fn views_steps(views: &[View], offsets: &[P2], text_height: f64) -> Vec<Value> {
     let mut steps = Vec::new();
+    // Dashes in proportion to the views (the catalog HIDDEN dash is 6.35).
+    let lt_scale = (text_height / 7.0).max(1e-3);
     for (v, at) in views.iter().zip(offsets) {
         // Circles get their own step so dimensions can pick them by name.
         let mut e: Vec<Value> = v
@@ -561,6 +627,8 @@ pub fn views_steps(views: &[View], offsets: &[P2], text_height: f64) -> Vec<Valu
         e.extend(v.hidden.iter().map(|s| {
             let mut j = shape_json(s, v, *at, L_HIDDEN);
             j["color"] = json!(8);
+            j["linetype"] = json!("HIDDEN");
+            j["linetype_scale"] = json!(lt_scale);
             j
         }));
         for (n, (c, r)) in v.circles().into_iter().enumerate() {
@@ -570,8 +638,8 @@ pub fn views_steps(views: &[View], offsets: &[P2], text_height: f64) -> Vec<Valu
             for (c, r) in v.circles() {
                 let p = place(c, v, *at);
                 let ext = r + text_height * 0.8;
-                e.push(json!({"type":"Line","start":[p[0] - ext, p[1]],"end":[p[0] + ext, p[1]],"layer":L_CENTER}));
-                e.push(json!({"type":"Line","start":[p[0], p[1] - ext],"end":[p[0], p[1] + ext],"layer":L_CENTER}));
+                e.push(json!({"type":"Line","start":[p[0] - ext, p[1]],"end":[p[0] + ext, p[1]],"layer":L_CENTER,"linetype":"CENTER","linetype_scale":lt_scale * 0.25}));
+                e.push(json!({"type":"Line","start":[p[0], p[1] - ext],"end":[p[0], p[1] + ext],"layer":L_CENTER,"linetype":"CENTER","linetype_scale":lt_scale * 0.25}));
             }
         }
         let label_at = [
@@ -722,6 +790,12 @@ pub fn dims_steps(dims: &[Dim], views: &[View], offsets: &[P2], restore_layer: &
         json!({"op":"sysvar","set":{"clayer":L_DIMS}}),
         json!({"op":"entities_delete","handles":"$dim_anchor"}),
     ];
+    let spacing = views
+        .iter()
+        .map(|v| v.width().max(v.height()))
+        .fold(0.0, f64::max)
+        / 12.0;
+    let mut placed: Vec<(ViewKind, P2)> = Vec::new();
     for d in dims {
         match d {
             Dim::Linear {
@@ -766,9 +840,26 @@ pub fn dims_steps(dims: &[Dim], views: &[View], offsets: &[P2], restore_layer: &
             Dim::Diameter { view, index, c, r } => {
                 let Some((v, o)) = at(*view) else { continue };
                 let p = place(*c, v, o);
+                // Lead away from the view's centre; concentric circles fan
+                // out so their leaders and text do not overlap.
+                let vc = [(v.lo[0] + v.hi[0]) / 2.0, (v.lo[1] + v.hi[1]) / 2.0];
+                let away = [c[0] - vc[0], c[1] - vc[1]];
+                let base = if away[0].hypot(away[1]) > r * 0.2 {
+                    away[1].atan2(away[0])
+                } else {
+                    45f64.to_radians()
+                };
+                let k = placed
+                    .iter()
+                    .filter(|(pv, pc)| pv == view && d2(*pc, *c) <= r.max(1e-9) * 1e-3)
+                    .count();
+                let angle = base + (50.0 * k as f64).to_radians();
+                placed.push((*view, *c));
+                let u = [angle.cos(), angle.sin()];
+                let reach = r + spacing * 1.2;
                 steps.push(json!({"op":"start","cmd":"DIMDIAMETER"}));
-                steps.push(json!({"op":"input","kind":"entity","handle":format!("${}", circle_name(*view, *index)),"point":[p[0] + r, p[1], 0.0]}));
-                steps.push(json!({"op":"input","kind":"point","point":[p[0] + r * 1.8, p[1] + r * 1.8, 0.0],"note":format!("Ø{}", fmt(2.0 * r))}));
+                steps.push(json!({"op":"input","kind":"entity","handle":format!("${}", circle_name(*view, *index)),"point":[p[0] + r * u[0], p[1] + r * u[1], 0.0]}));
+                steps.push(json!({"op":"input","kind":"point","point":[p[0] + reach * u[0], p[1] + reach * u[1], 0.0],"note":format!("Ø{}", fmt(2.0 * r))}));
             }
         }
     }

@@ -264,8 +264,8 @@ layers:
 | Layer | Content |
 | --- | --- |
 | `AI-VIEW` | Visible edges and outlines |
-| `AI-VIEW-HIDDEN` | Hidden edges (gray; give the layer a dashed linetype if you load one) |
-| `AI-VIEW-CENTER` | Centre marks on circles |
+| `AI-VIEW-HIDDEN` | Hidden edges (gray, `HIDDEN` linetype) |
+| `AI-VIEW-CENTER` | Centre marks on circles (`CENTER` linetype) |
 | `AI-VIEW-LABEL` | View names |
 | `AI-VIEW-DIMS` | Dimensions |
 
@@ -280,3 +280,10 @@ layers:
   non-redundant scheme to ISO 129-1 or ASME Y14.5. It picks *which* points
   and circles to dimension; the values are always measured from the views.
 - **No dimensions**.
+
+Dimensions use the `AI-VIEWS` dimension style: a copy of the current style
+whose DIMSCALE sizes the text in proportion to the views (and, for ASME
+Y14.5, a decimal point). The current style is left as it was. Linetype
+scales of hidden and centre lines also follow the size of the views.
+Diameter leaders point away from the view's centre and fan out for
+concentric circles.

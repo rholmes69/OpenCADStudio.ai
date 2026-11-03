@@ -153,7 +153,7 @@ fn build_schema(name: &str) -> Result<Value, String> {
     let number = json!({"type":"number"});
     let string = json!({"type":"string"});
     let boolean = json!({"type":"boolean"});
-    let mut properties = json!({"type":{"type":"string","pattern":pattern},"layer":{"type":"string","description":"Missing layers are created; empty uses the default layer."},"color":{"type":"integer","minimum":-32768,"maximum":32767,"description":"DXF indexed color, including ByLayer/ByBlock sentinels."}});
+    let mut properties = json!({"type":{"type":"string","pattern":pattern},"layer":{"type":"string","description":"Missing layers are created; empty uses the default layer."},"color":{"type":"integer","minimum":-32768,"maximum":32767,"description":"DXF indexed color, including ByLayer/ByBlock sentinels."},"linetype":{"type":"string","description":"Linetype name; a standard one (HIDDEN, CENTER, DASHED…) missing from the drawing is loaded."},"linetype_scale":{"type":"number","exclusiveMinimum":0}});
     let (required, example) = match *canonical {
         "Line" => {
             properties["start"] = point(2, 3);
@@ -415,6 +415,21 @@ fn apply_common_properties(spec: &Value, entity: &mut codec::EntityType) -> Pars
         .filter(|n| n.fract() == 0.0 && (-32768.0..=32767.0).contains(n))
     {
         entity.common_mut().color = codec::types::Color::from_index(index as i16);
+    }
+    if let Some(linetype) = spec["linetype"].as_str().filter(|s| !s.trim().is_empty()) {
+        entity.common_mut().linetype = linetype.trim().to_owned();
+    }
+    if !spec["linetype_scale"].is_null() {
+        let scale = spec["linetype_scale"]
+            .as_f64()
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .ok_or_else(|| {
+                failure(
+                    "invalid_linetype_scale",
+                    "linetype_scale must be a positive number".to_string(),
+                )
+            })?;
+        entity.common_mut().linetype_scale = scale;
     }
     Ok(())
 }
