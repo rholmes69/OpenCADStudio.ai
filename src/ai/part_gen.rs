@@ -241,11 +241,38 @@ pub enum Shape {
     },
 }
 
+/// Which way a body's own Z axis points once it is placed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+impl Axis {
+    /// Turn a point from the body's own frame (axis along Z) into the part's.
+    pub fn apply(self, p: [f64; 3]) -> [f64; 3] {
+        match self {
+            // +90° about Y: Z → +X.
+            Axis::X => [p[2], p[1], -p[0]],
+            // −90° about X: Z → +Y.
+            Axis::Y => [p[0], p[2], -p[1]],
+            Axis::Z => p,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     pub op: BodyOp,
     pub shape: Shape,
+    /// Where the body's own origin ends up in the part.
     pub at: [f64; 3],
+    /// The body's own Z axis direction (cylinders, prisms and revolves are
+    /// built along it; patterns lie in the plane across it).
+    pub axis: Axis,
+    /// The pattern offset in the body's own frame (`at` = base + axis(local)).
+    pub local: [f64; 3],
     /// Rotation about Z in degrees (from a circular pattern or `rotate`).
     pub rotate: f64,
     pub label: String,
@@ -550,13 +577,27 @@ pub fn instances(part: &Part) -> Result<Vec<Instance>, String> {
             None | Some(Value::Null) => [0.0, 0.0, 0.0],
             Some(_) => return Err(what("at must be [x, y] or [x, y, z]")),
         };
+        let axis = match b
+            .get("axis")
+            .and_then(Value::as_str)
+            .unwrap_or("z")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "z" | "+z" | "" => Axis::Z,
+            "x" | "+x" => Axis::X,
+            "y" | "+y" => Axis::Y,
+            other => return Err(what(&format!("axis \"{other}\" must be x, y or z"))),
+        };
         let rotate = b
             .get("rotate")
             .map(|r| val(r, &vars, &what("rotate")))
             .transpose()?
             .unwrap_or(0.0);
         // Patterns.
-        let mut placements: Vec<([f64; 3], f64)> = vec![(at, rotate)];
+        // Pattern offsets in the body's own frame, then tilted onto its axis.
+        let mut placements: Vec<([f64; 3], f64)> = vec![([0.0; 3], rotate)];
         if let Some(p) = b.get("pattern") {
             if let Some(c) = p.get("circular") {
                 let count = val(&c["count"], &vars, &what("pattern count"))?.round() as usize;
@@ -583,10 +624,7 @@ pub fn instances(part: &Part) -> Result<Vec<Instance>, String> {
                     .map(|k| {
                         let t = start + step * k as f64;
                         let r = t.to_radians();
-                        (
-                            [at[0] + radius * r.cos(), at[1] + radius * r.sin(), at[2]],
-                            rotate + t,
-                        )
+                        ([radius * r.cos(), radius * r.sin(), 0.0], rotate + t)
                     })
                     .collect();
             } else if let Some(l) = p.get("linear") {
@@ -617,11 +655,7 @@ pub fn instances(part: &Part) -> Result<Vec<Instance>, String> {
                     .flat_map(|r| {
                         (0..count.max(1)).map(move |k| {
                             (
-                                [
-                                    at[0] + dx * k as f64,
-                                    at[1] + dy * k as f64 + row_dy * r as f64,
-                                    at[2],
-                                ],
+                                [dx * k as f64, dy * k as f64 + row_dy * r as f64, 0.0],
                                 rotate,
                             )
                         })
@@ -631,11 +665,14 @@ pub fn instances(part: &Part) -> Result<Vec<Instance>, String> {
                 return Err(what("pattern must be circular or linear"));
             }
         }
-        for (k, (p, r)) in placements.into_iter().enumerate() {
+        for (k, (local, r)) in placements.into_iter().enumerate() {
+            let t = axis.apply(local);
             out.push(Instance {
                 op,
                 shape: shape.clone(),
-                at: p,
+                at: [at[0] + t[0], at[1] + t[1], at[2] + t[2]],
+                axis,
+                local,
                 rotate: r,
                 label: if k == 0 {
                     label.clone()
@@ -673,16 +710,24 @@ pub fn extents(insts: &[Instance]) -> ([f64; 3], [f64; 3]) {
             }
         };
         let (s, c) = i.rotate.to_radians().sin_cos();
+        let (mut blo, mut bhi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
         for p in r_xy {
-            let x = i.at[0] + p[0] * c - p[1] * s;
-            let y = i.at[1] + p[0] * s + p[1] * c;
-            lo[0] = lo[0].min(x);
-            hi[0] = hi[0].max(x);
-            lo[1] = lo[1].min(y);
-            hi[1] = hi[1].max(y);
+            let x = p[0] * c - p[1] * s;
+            let y = p[0] * s + p[1] * c;
+            blo = [blo[0].min(x), blo[1].min(y)];
+            bhi = [bhi[0].max(x), bhi[1].max(y)];
         }
-        lo[2] = lo[2].min(i.at[2] + zmin);
-        hi[2] = hi[2].max(i.at[2] + zmax);
+        for x in [blo[0], bhi[0]] {
+            for y in [blo[1], bhi[1]] {
+                for z in [zmin, zmax] {
+                    let w = i.axis.apply([x, y, z]);
+                    for k in 0..3 {
+                        lo[k] = lo[k].min(i.at[k] + w[k]);
+                        hi[k] = hi[k].max(i.at[k] + w[k]);
+                    }
+                }
+            }
+        }
     }
     (lo, hi)
 }
@@ -744,10 +789,32 @@ pub fn plan(part: &Part, origin: [f64; 3], restore_layer: &str) -> Result<Vec<Va
                 steps.push(json!({"op":"input","kind":"text","text":"90"}));
             }
         }
+        let base = if inst.axis == Axis::Z {
+            inst.at
+        } else {
+            // Place within its own frame, then tilt the frame onto its axis
+            // about the origin; the move below takes it to its base point.
+            if inst.local.iter().any(|x| x.abs() > 1e-12) {
+                steps.push(json!({"op":"entities_transform","handles":format!("${name}"),"action":"move","vector":inst.local}));
+            }
+            let (token, angle) = if inst.axis == Axis::X {
+                ("Y", "90")
+            } else {
+                ("X", "-90")
+            };
+            steps.push(json!({"op":"start","cmd":"3DROTATE"}));
+            steps.push(json!({"op":"input","kind":"selection","handles":format!("${name}")}));
+            steps.push(json!({"op":"input","kind":"enter"}));
+            steps.push(json!({"op":"input","kind":"point","point":[0.0,0.0,0.0]}));
+            steps.push(json!({"op":"input","kind":"token","text":token}));
+            steps.push(json!({"op":"input","kind":"text","text":angle,"note":format!("{} along {}", inst.label, token_axis(inst.axis))}));
+            let t = inst.axis.apply(inst.local);
+            [inst.at[0] - t[0], inst.at[1] - t[1], inst.at[2] - t[2]]
+        };
         let v = [
-            origin[0] + inst.at[0],
-            origin[1] + inst.at[1],
-            origin[2] + inst.at[2],
+            origin[0] + base[0],
+            origin[1] + base[1],
+            origin[2] + base[2],
         ];
         if v.iter().any(|x| x.abs() > 1e-12) {
             steps.push(json!({"op":"entities_transform","handles":format!("${name}"),"action":"move","vector":v}));
@@ -807,6 +874,14 @@ pub fn plan(part: &Part, origin: [f64; 3], restore_layer: &str) -> Result<Vec<Va
     Ok(steps)
 }
 
+fn token_axis(a: Axis) -> &'static str {
+    match a {
+        Axis::X => "X",
+        Axis::Y => "Y",
+        Axis::Z => "Z",
+    }
+}
+
 fn extrude_steps(profile: &str, name: &str, h: f64) -> Vec<Value> {
     vec![
         json!({"op":"start","cmd":"EXTRUDE"}),
@@ -838,7 +913,8 @@ pub fn system_prompt(units: &str) -> String {
   "parameters": {{"<name>": <number or expression of earlier parameters>, ...}},
   "bodies": [<body>, ...]}}
 
-A body is {{"name": "...", "op": "add" | "cut" | "intersect", <shape>, "at": [x, y, z], "rotate": <deg about Z>, "pattern": ...}}.
+A body is {{"name": "...", "op": "add" | "cut" | "intersect", <shape>, "at": [x, y, z], "axis": "z" | "x" | "y", "rotate": <deg about its axis>, "pattern": ...}}.
+"axis" (default "z") is the direction the shape's own Z axis points: a cylinder, prism, extrude or revolve with "axis": "x" runs from "at" towards +X, and "y" towards +Y. Its pattern lies in the plane across that axis, centred on "at" (use this for pipes, tees, cross holes and flanges on side branches). The shape's own X turns to -Z for axis "x"; its own Y turns to -Z for axis "y".
 Shapes (sizes are numbers or expressions over the parameters, e.g. "d/2 + 1"):
 - "box": {{"w": .., "d": .., "h": ..}} — centred on "at" in X and Y, base at z, height up
 - "cylinder": {{"d": .., "h": ..}} — axis Z, base centre at "at"

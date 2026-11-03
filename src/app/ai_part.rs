@@ -415,4 +415,74 @@ mod tests {
         app.automation_op(r#"{"op":"undo"}"#);
         assert_eq!(solids(&mut app), s);
     }
+
+    #[test]
+    fn builds_a_flanged_tee_with_bodies_along_x_and_y() {
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        let i = app.active_tab;
+        app.tabs[i].scene.document.header.insertion_units = 4;
+        let def = std::env::var("OCS_TEE_JSON")
+            .ok()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .unwrap_or_else(|| {
+                r#"{"name":"tee","units":"mm","parameters":{"OD":114.3,"ID":102.3,"L":400,"B":200,"ft":20,"FD":230.3,"zc":"FD/2"},
+                "bodies":[
+                  {"op":"add","cylinder":{"d":"OD","h":"L"},"axis":"x","at":["-L/2",0,"zc"]},
+                  {"op":"add","cylinder":{"d":"OD","h":"B"},"axis":"y","at":[0,0,"zc"]},
+                  {"op":"add","cylinder":{"d":"FD","h":"ft"},"axis":"y","at":[0,"B-ft","zc"]},
+                  {"op":"cut","cylinder":{"d":"ID","h":"L+2"},"axis":"x","at":["-L/2-1",0,"zc"]},
+                  {"op":"cut","cylinder":{"d":"ID","h":"B+1"},"axis":"y","at":[0,0,"zc"]},
+                  {"op":"cut","cylinder":{"d":22,"h":"ft+2"},"axis":"y","at":[0,"B-ft-1","zc"],
+                   "pattern":{"circular":{"count":8,"radius":95,"start_deg":22.5}}}]}"#
+                    .to_string()
+            });
+        let part = parse_part(&def).unwrap();
+        app.open_ai_part();
+        let st = app.ai_part.as_mut().unwrap();
+        st.set_part(part);
+        st.origin = Some([0.0, 0.0, 0.0]);
+        app.ai_part_insert().expect("builds");
+        let s = solids(&mut app);
+        assert_eq!(s.len(), 1, "one finished solid: {s:?}");
+        let m = app.automation_op(
+            &serde_json::json!({"protocol":1,"op":"measure","handles":[s[0]]}).to_string(),
+        );
+        let r = &m["measurements"][0];
+        eprintln!(
+            "TEE volume {} bounds {} .. {}",
+            r["mesh"]["volume"], r["bounds"]["min"], r["bounds"]["max"]
+        );
+        let lo: Vec<f64> = (0..3)
+            .map(|k| r["bounds"]["min"][k].as_f64().unwrap())
+            .collect();
+        let hi: Vec<f64> = (0..3)
+            .map(|k| r["bounds"]["max"][k].as_f64().unwrap())
+            .collect();
+        assert!(
+            (lo[0] + 200.0).abs() < 0.1 && (hi[0] - 200.0).abs() < 0.1,
+            "run along X: {lo:?} {hi:?}"
+        );
+        assert!((hi[1] - 200.0).abs() < 0.1, "branch along +Y: {hi:?}");
+        assert!(
+            lo[2].abs() < 0.1 && (hi[2] - 230.3).abs() < 0.2,
+            "rests on z=0: {lo:?} {hi:?}"
+        );
+        if let Ok(out) = std::env::var("OCS_TEE_OUT") {
+            let saved = app.automation_op(&serde_json::json!({"op":"save","path":out}).to_string());
+            eprintln!("SAVE {saved}");
+            let h = codec::Handle::new(u64::from_str_radix(&s[0], 16).unwrap());
+            app.tabs[i].scene.restore_solid_models(&[h]);
+            let body = app.tabs[i].scene.solid_models.get(&h).cloned().unwrap();
+            let mesh = kernel::brep::mesh::tessellate(
+                &body,
+                kernel::brep::mesh::TessellationTolerance::new(
+                    kernel::tessellation::DEFAULT_ANGLE,
+                    1e-9,
+                ),
+            );
+            let json = serde_json::json!({"positions": mesh.mesh.positions, "triangles": mesh.mesh.triangles});
+            std::fs::write(format!("{out}.mesh.json"), json.to_string()).unwrap();
+        }
+    }
 }

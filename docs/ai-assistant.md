@@ -193,6 +193,13 @@ revolved half-sections, with circular or linear patterns, joined (`add`),
 removed (`cut`) or intersected. Threads are modelled at their nominal
 diameter.
 
+Each body points along Z unless it says otherwise: `"axis": "x"` or `"y"`
+lays a cylinder, prism, extrusion or revolved section along that axis from
+its position, and its pattern then goes round that axis. That is how pipes,
+tees, cross holes and flanges on side branches are built — for example a
+DN100 flanged tee with the run along X, the branch along Y and eight bolt
+holes on each of the three flanges.
+
 Review the parameters before anything is drawn. Each field takes a number or
 an expression of other parameters (`D/2 + 5`), and sizes that depend on one
 you change follow it. A value that would make a body impossible — a negative
