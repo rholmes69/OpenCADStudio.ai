@@ -48,6 +48,10 @@ impl OpenCADStudio {
                 self.open_ai_plan();
                 Some(Task::none())
             }
+            "AIVIEWS" | "AIDRAWING" => {
+                self.open_ai_views();
+                Some(Task::none())
+            }
             _ => None,
         }
     }

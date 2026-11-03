@@ -72,6 +72,7 @@ mod ai_check;
 mod ai_constrain;
 mod ai_part;
 mod ai_plan;
+mod ai_views;
 mod purge_dialog;
 mod rename_dialog;
 mod properties;
@@ -725,6 +726,7 @@ pub(super) struct OpenCADStudio {
     ai_constrain: Option<crate::ui::window::ai_constrain::State>,
     ai_part: Option<crate::ui::window::ai_part::State>,
     ai_plan: Option<crate::ui::window::ai_plan::State>,
+    ai_views: Option<crate::ui::window::ai_views::State>,
     purge_dialog: Option<crate::ui::window::purge::State>,
     /// The Purge dialog's choice, for the PURGE it runs.
     purge_only: Option<purge_dialog::PurgeOnly>,
@@ -2883,6 +2885,7 @@ pub enum ModalKind {
     AiConstrain,
     AiPart,
     AiPlan,
+    AiViews,
     SelectSimilarSettings,
     BlockSaveAs,
     BlockVisibility,
@@ -3623,6 +3626,7 @@ pub enum Message {
     AiConstrain(crate::ui::window::ai_constrain::AiConstrainMsg),
     AiPart(crate::ui::window::ai_part::AiPartMsg),
     AiPlan(crate::ui::window::ai_plan::AiPlanMsg),
+    AiViews(crate::ui::window::ai_views::AiViewsMsg),
     /// Select Similar settings: flip one SELECTSIMILARMODE bit.
     SelectSimilarSettingsToggle(u16),
     SelectSimilarSettingsOk,
@@ -5518,6 +5522,7 @@ impl OpenCADStudio {
             ai_constrain: None,
             ai_part: None,
             ai_plan: None,
+            ai_views: None,
             purge_dialog: None,
             purge_only: None,
             select_similar_settings: None,

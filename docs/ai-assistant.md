@@ -4,8 +4,9 @@ Open CAD Studio can use a language model to turn plain-language requests into
 drawing edits (`AICMD`), answer questions about the open drawing (`AICHAT`),
 turn images into geometry (`AIIMAGE`, `AISKETCH`), check drawings against a
 standard (`AICHECK`), suggest sketch constraints (`AICONSTRAIN`), design
-parametric parts from a description (`AIPART`) and lay out floor plans
-(`AIPLAN`). All of them run in the desktop app. The model never edits the drawing
+parametric parts from a description (`AIPART`), lay out floor plans
+(`AIPLAN`) and make dimensioned drawing views of a solid (`AIVIEWS`). All of
+them run in the desktop app. The model never edits the drawing
 itself: it proposes automation-API operations, and you review and apply them.
 
 ## Setting up a provider — `AISETTINGS`
@@ -237,3 +238,38 @@ it is shown: every opening must fit its wall and openings must not overlap.
 
 Plans from the model are in metres and are converted into the drawing's
 units; areas are reported in m² whenever the drawing's units are known.
+
+## Drawing views from a solid — `AIVIEWS`
+
+Select one 3D solid and run `AIVIEWS`. Front, top, right and isometric views
+are projected from the solid's exact edges and its smooth-surface outlines,
+with hidden-line removal: every edge is cut into short pieces that are tested
+against the solid toward the viewer. Hidden pieces that lie under visible
+lines are dropped, tangent edges between smoothly joined faces are left out,
+and circular edges come out as true circles and arcs. Untick views you do
+not want, or untick *Hidden lines*.
+
+The preview shows the sheet laid out third-angle: the top view above the
+front, the right view beside it and the isometric view at the upper right.
+**Insert** places it to the right of the drawing as one undo step, on these
+layers:
+
+| Layer | Content |
+| --- | --- |
+| `AI-VIEW` | Visible edges and outlines |
+| `AI-VIEW-HIDDEN` | Hidden edges (gray; give the layer a dashed linetype if you load one) |
+| `AI-VIEW-CENTER` | Centre marks on circles |
+| `AI-VIEW-LABEL` | View names |
+| `AI-VIEW-DIMS` | Dimensions |
+
+*Dimensions*:
+
+- **Basic** — overall width and height on the front view, depth on the top
+  view, each hole size once (`DIMDIAMETER` on the view's circles) and each
+  hole centre located from the lower-left corner of the view where holes
+  show as circles.
+- **AI dimension scheme** — the model set for *Auto dimensioning* is given
+  the views' corner points and circles and chooses a complete,
+  non-redundant scheme to ISO 129-1 or ASME Y14.5. It picks *which* points
+  and circles to dimension; the values are always measured from the views.
+- **No dimensions**.

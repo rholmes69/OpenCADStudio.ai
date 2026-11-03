@@ -81,6 +81,8 @@ const DENIED_VERBS: &[&str] = &[
     "TEXT2PART",
     "AIPLAN",
     "FLOORPLAN",
+    "AIVIEWS",
+    "AIDRAWING",
 ];
 
 pub const MAX_STEPS: usize = 40;
@@ -302,6 +304,13 @@ pub fn bind(step: &Value, bindings: &Bindings) -> Result<Value, String> {
             step["handles"] = json!(out);
         }
         _ => {}
+    }
+    // A single-entity pick (`"handle": "$name"`) takes the binding's first.
+    if let Some(Value::String(s)) = step.get("handle") {
+        if s.starts_with('$') {
+            let first = resolve(s)?.into_iter().next().unwrap_or_default();
+            step["handle"] = json!(first);
+        }
     }
     Ok(step)
 }

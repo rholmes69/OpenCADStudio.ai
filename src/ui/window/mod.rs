@@ -54,6 +54,7 @@ pub mod ai_check;
 pub mod ai_constrain;
 pub mod ai_part;
 pub mod ai_plan;
+pub mod ai_views;
 pub mod purge;
 pub mod recovery;
 pub mod rename;
