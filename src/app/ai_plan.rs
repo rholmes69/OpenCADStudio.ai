@@ -541,4 +541,64 @@ mod tests {
         app.ai_plan_insert().expect("draws");
         assert_eq!(count(&mut app, fp::L_WALL), 4);
     }
+
+    /// Manual run: draw the plan in `OCS_PLAN_JSON` (in an inch drawing,
+    /// with schedule and massing) and save it to `OCS_PLAN_OUT`, plus the
+    /// massing triangles to `<out>.mesh.json`.
+    #[test]
+    fn manual_plan_from_env() {
+        let Ok(path) = std::env::var("OCS_PLAN_JSON") else {
+            return;
+        };
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        let i = app.active_tab;
+        app.tabs[i].scene.document.header.insertion_units = 1;
+        app.open_ai_plan();
+        let st = app.ai_plan.as_mut().unwrap();
+        st.plan = Some(fp::parse_plan(&std::fs::read_to_string(path).unwrap()).unwrap());
+        st.build_3d = true;
+        st.schedule = true;
+        st.wall_height = "120".into();
+        eprintln!("{}", app.ai_plan_insert().expect("draws"));
+        let Ok(out) = std::env::var("OCS_PLAN_OUT") else {
+            return;
+        };
+        let solids = app.automation_op(r#"{"op":"query","layer":"A-WALL-3D"}"#);
+        let handles: Vec<codec::Handle> = solids["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                codec::Handle::new(u64::from_str_radix(e["handle"].as_str().unwrap(), 16).unwrap())
+            })
+            .collect();
+        app.tabs[i].scene.restore_solid_models(&handles);
+        let mut tris: Vec<[[f64; 3]; 3]> = Vec::new();
+        for h in &handles {
+            if let Some(body) = app.tabs[i].scene.solid_models.get(h).cloned() {
+                let m = kernel::brep::mesh::tessellate(
+                    &body,
+                    kernel::brep::mesh::TessellationTolerance::new(
+                        kernel::tessellation::DEFAULT_ANGLE,
+                        1e-9,
+                    ),
+                );
+                let p = &m.mesh.positions;
+                tris.extend(m.mesh.triangles.iter().map(|t| [p[t[0]], p[t[1]], p[t[2]]]));
+            }
+        }
+        eprintln!("massing {} solids, {} triangles", handles.len(), tris.len());
+        std::fs::write(
+            format!("{out}.mesh.json"),
+            serde_json::json!(tris).to_string(),
+        )
+        .unwrap();
+        for ext in ["dwg", "dxf"] {
+            let r = app.automation_op(
+                &serde_json::json!({"op":"save","path":format!("{out}.{ext}")}).to_string(),
+            );
+            eprintln!("{r}");
+        }
+    }
 }

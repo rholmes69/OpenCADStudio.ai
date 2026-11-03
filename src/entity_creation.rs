@@ -205,6 +205,10 @@ fn build_schema(name: &str) -> Result<Value, String> {
             properties["height"] = json!({"type":"number","default":2.5,"description":"Absolute value, clamped to at least 0.000001."});
             properties["rotation_deg"] = number.clone();
             properties["style"] = json!({"type":"string","description":"Nonempty style names must exist in the target document."});
+            if *canonical == "Text" {
+                properties["halign"] = json!({"enum":["left","center","right"],"description":"Horizontal justification about position (default left)."});
+                properties["valign"] = json!({"enum":["baseline","bottom","middle","top"],"description":"Vertical justification about position (default baseline)."});
+            }
             if *canonical == "MText" {
                 properties["width"] = json!({"type":"number","description":"Positive values set rectangle width; otherwise default."});
             }
@@ -636,6 +640,26 @@ pub(crate) fn build_entity(
                 .with_rotation(deg_field(spec, "rotation_deg"));
             if let Some(style) = text_style_field(spec, document)? {
                 text.style = style;
+            }
+            // Justification: the position becomes the alignment point.
+            use codec::entities::text::{TextHorizontalAlignment as H, TextVerticalAlignment as V};
+            let h = match spec["halign"].as_str().unwrap_or("left").to_ascii_lowercase().as_str() {
+                "left" => H::Left,
+                "center" | "centre" => H::Center,
+                "right" => H::Right,
+                other => return Err(failure("invalid_text", format!("halign \"{other}\" must be left, center or right"))),
+            };
+            let v = match spec["valign"].as_str().unwrap_or("baseline").to_ascii_lowercase().as_str() {
+                "baseline" => V::Baseline,
+                "bottom" => V::Bottom,
+                "middle" => V::Middle,
+                "top" => V::Top,
+                other => return Err(failure("invalid_text", format!("valign \"{other}\" must be baseline, bottom, middle or top"))),
+            };
+            if h != H::Left || v != V::Baseline {
+                text.horizontal_alignment = h;
+                text.vertical_alignment = v;
+                text.alignment_point = Some(text.insertion_point);
             }
             EntityType::Text(text)
         }

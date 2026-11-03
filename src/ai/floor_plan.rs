@@ -440,9 +440,18 @@ pub fn label_height(plan: &Plan, mm_per_unit: Option<f64>) -> f64 {
     }
 }
 
-/// Room area in m² when the unit is known (else drawing units²).
+/// Inch and foot drawings label in feet; metric ones in metres.
+fn imperial(mm_per_unit: Option<f64>) -> bool {
+    mm_per_unit.is_some_and(|mm| (mm - 25.4).abs() < 1e-9 || (mm - 304.8).abs() < 1e-9)
+}
+
+/// Room area in m² (or sq ft in an imperial drawing) when the unit is
+/// known (else drawing units²).
 pub fn area_label(area: f64, mm_per_unit: Option<f64>) -> String {
     match mm_per_unit {
+        Some(mm) if imperial(mm_per_unit) => {
+            format!("{} sq ft", trim(area * (mm / 304.8).powi(2), 1))
+        }
         Some(mm) => format!("{} m²", trim(area * (mm / 1000.0).powi(2), 2)),
         None => format!("{} sq units", trim(area, 2)),
     }
@@ -450,6 +459,10 @@ pub fn area_label(area: f64, mm_per_unit: Option<f64>) -> String {
 
 fn length_label(l: f64, mm_per_unit: Option<f64>) -> String {
     match mm_per_unit {
+        Some(mm) if imperial(mm_per_unit) => {
+            let inches = (l * mm / 25.4).round() as i64;
+            format!("{}'-{}\"", inches / 12, inches % 12)
+        }
         Some(mm) => format!("{} m", trim(l * mm / 1000.0, 2)),
         None => trim(l, 2),
     }
@@ -480,26 +493,42 @@ pub fn plan_2d(
         match o.kind {
             OpeningKind::Door => {
                 let side = if o.swing_left { 1.0 } else { -1.0 };
-                let (hinge_s, free_s) = if o.hinge_start { (s0, s1) } else { (s1, s0) };
                 let face = side * h;
-                let hinge = on(hinge_s, face);
-                let closed = on(free_s, face);
-                let open = add(hinge, mul(nrm, side * o.width));
-                doors.push(json!({"type":"Line","start":hinge,"end":open,"layer":L_DOOR}));
-                // The swing: a quarter circle from the open leaf to the
-                // closed position, counter-clockwise.
-                let ang = |p: [f64; 2]| {
-                    let d = sub(p, hinge);
-                    d[1].atan2(d[0]).to_degrees()
+                // Openings of 1.5 m (about 5 ft) or more get a pair of
+                // leaves hinged at both jambs.
+                let wide = match mm_per_unit {
+                    Some(mm) => o.width * mm >= 1500.0 - 1e-6,
+                    None => o.width >= w.thickness * 10.0,
                 };
-                let (a_open, a_closed) = (ang(open), ang(closed));
-                let ccw = |from: f64, to: f64| (to - from).rem_euclid(360.0);
-                let (start, end) = if ccw(a_open, a_closed) <= 180.0 {
-                    (a_open, a_closed)
+                let leaves: Vec<(f64, f64)> = if wide {
+                    let m = (s0 + s1) / 2.0;
+                    vec![(s0, m), (s1, m)]
+                } else if o.hinge_start {
+                    vec![(s0, s1)]
                 } else {
-                    (a_closed, a_open)
+                    vec![(s1, s0)]
                 };
-                doors.push(json!({"type":"Arc","center":hinge,"radius":o.width,"start_angle_deg":start,"end_angle_deg":end,"layer":L_DOOR}));
+                for (hinge_s, free_s) in leaves {
+                    let leaf = if wide { o.width / 2.0 } else { o.width };
+                    let hinge = on(hinge_s, face);
+                    let closed = on(free_s, face);
+                    let open = add(hinge, mul(nrm, side * leaf));
+                    doors.push(json!({"type":"Line","start":hinge,"end":open,"layer":L_DOOR}));
+                    // The swing: a quarter circle from the open leaf to the
+                    // closed position, counter-clockwise.
+                    let ang = |p: [f64; 2]| {
+                        let d = sub(p, hinge);
+                        d[1].atan2(d[0]).to_degrees()
+                    };
+                    let (a_open, a_closed) = (ang(open), ang(closed));
+                    let ccw = |from: f64, to: f64| (to - from).rem_euclid(360.0);
+                    let (start, end) = if ccw(a_open, a_closed) <= 180.0 {
+                        (a_open, a_closed)
+                    } else {
+                        (a_closed, a_open)
+                    };
+                    doors.push(json!({"type":"Arc","center":hinge,"radius":leaf,"start_angle_deg":start,"end_angle_deg":end,"layer":L_DOOR}));
+                }
             }
             OpeningKind::Window => {
                 for off in [-h, 0.0, h] {
@@ -523,8 +552,26 @@ pub fn plan_2d(
         rooms.push(json!({"type":"LwPolyline","vertices":pts,"closed":true,"layer":L_AREA}));
         let (area, _) = area_perimeter(&r.points);
         let c = at(centroid(&r.points), origin);
-        labels.push(json!({"type":"Text","value":r.name,"position":[c[0], c[1] + th * 0.2],"height":th,"layer":L_IDEN}));
-        labels.push(json!({"type":"Text","value":area_label(area, mm_per_unit),"position":[c[0], c[1] - th * 1.3],"height":th * 0.75,"layer":L_IDEN}));
+        // Centred on the room, and smaller where the name would not fit
+        // across it (allow 0.7 of its height per character).
+        let (x0, x1) = r
+            .points
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
+                (a.min(p[0]), b.max(p[0]))
+            });
+        let room_w =
+            (x1 - x0 - plan.walls.iter().map(|w| w.thickness).fold(0.0, f64::max)).max(0.0);
+        let area_text = area_label(area, mm_per_unit);
+        let chars = r
+            .name
+            .chars()
+            .count()
+            .max(area_text.chars().count() * 3 / 4)
+            .max(1) as f64;
+        let t = th.min(room_w * 0.85 / (chars * 0.7)).max(th * 0.35);
+        labels.push(json!({"type":"Text","value":r.name,"position":[c[0], c[1] + t * 0.2],"height":t,"halign":"center","layer":L_IDEN}));
+        labels.push(json!({"type":"Text","value":area_text,"position":[c[0], c[1] - t * 1.3],"height":t * 0.75,"halign":"center","layer":L_IDEN}));
     }
     let mut steps = Vec::new();
     let mut push = |entities: Vec<Value>, note: &str| {

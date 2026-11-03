@@ -236,15 +236,17 @@ it is shown: every opening must fit its wall and openings must not overlap.
 | Layer | Content |
 | --- | --- |
 | `A-WALL` | Solid wall poché, split around openings, with closed corners |
-| `A-DOOR` | Door leaves and quarter-circle swings |
+| `A-DOOR` | Door leaves and quarter-circle swings (a pair of leaves for openings of 1.5 m / 5 ft or more) |
 | `A-GLAZ` | Window frames and glass lines |
 | `A-AREA` | Closed room boundaries (usable with `AREA`, `MEASUREGEOM`) |
-| `A-AREA-IDEN` | Room names and areas |
+| `A-AREA-IDEN` | Room names and areas, centred and scaled down to fit narrow rooms |
 | `A-ANNO-SCHD` | Room schedule: name, area, perimeter and total |
 | `A-WALL-3D` | Optional 3D massing: wall solids to the storey height, with lintels over doors and wall above and below windows |
 
-Plans from the model are in metres and are converted into the drawing's
-units; areas are reported in m² whenever the drawing's units are known.
+Plans from the model are in metres (or the units they name, such as feet)
+and are converted into the drawing's units; areas are reported in m² — or
+sq ft, with perimeters in feet and inches, in an inch or foot drawing —
+whenever the drawing's units are known.
 
 ## Drawing views from a solid — `AIVIEWS`
 
