@@ -559,8 +559,67 @@ mod tests {
         st.plan = Some(fp::parse_plan(&std::fs::read_to_string(path).unwrap()).unwrap());
         st.build_3d = true;
         st.schedule = true;
-        st.wall_height = "120".into();
+        let h_in = |st: &crate::ui::window::ai_plan::State| {
+            format!(
+                "{}",
+                st.plan.as_ref().map_or(10.0, |p| p.wall_height) * 12.0
+            )
+        };
+        st.wall_height = h_in(st);
         eprintln!("{}", app.ai_plan_insert().expect("draws"));
+        let walls3d = |app: &mut OpenCADStudio| -> Vec<String> {
+            app.automation_op(r#"{"op":"query","layer":"A-WALL-3D"}"#)["entities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["handle"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let bounds = |app: &mut OpenCADStudio, hs: &[String]| -> ([f64; 3], [f64; 3]) {
+            let m = app.automation_op(
+                &serde_json::json!({"protocol":1,"op":"measure","handles":hs}).to_string(),
+            );
+            let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            for r in m["measurements"].as_array().unwrap() {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(r["bounds"]["min"][k].as_f64().unwrap());
+                    hi[k] = hi[k].max(r["bounds"]["max"][k].as_f64().unwrap());
+                }
+            }
+            (lo, hi)
+        };
+        // A second storey (`OCS_PLAN_JSON2`, same plan coordinates) is drawn
+        // beside the first and its massing stacked `OCS_PLAN_LIFT` above it,
+        // aligned on the shared north-east corner.
+        if let Ok(path2) = std::env::var("OCS_PLAN_JSON2") {
+            let first = walls3d(&mut app);
+            let (_, hi1) = bounds(&mut app, &first);
+            app.active_modal = None;
+            app.open_ai_plan();
+            let st = app.ai_plan.as_mut().unwrap();
+            st.plan = Some(fp::parse_plan(&std::fs::read_to_string(path2).unwrap()).unwrap());
+            st.build_3d = true;
+            st.schedule = true;
+            st.wall_height = h_in(st);
+            eprintln!("{}", app.ai_plan_insert().expect("draws upper"));
+            let second: Vec<String> = walls3d(&mut app)
+                .into_iter()
+                .filter(|h| !first.contains(h))
+                .collect();
+            let (_, hi2) = bounds(&mut app, &second);
+            let lift: f64 = std::env::var("OCS_PLAN_LIFT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(114.0);
+            let v = [hi1[0] - hi2[0], hi1[1] - hi2[1], lift];
+            eprintln!("stack {} solids by {v:?}", second.len());
+            app.apply_ai_plan(&StepPlan {
+                summary: "stack".into(),
+                message: None,
+                steps: vec![serde_json::json!({"op":"entities_transform","handles":second,"action":"move","vector":v})],
+            })
+            .expect("stacks");
+        }
         let Ok(out) = std::env::var("OCS_PLAN_OUT") else {
             return;
         };
