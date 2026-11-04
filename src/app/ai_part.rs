@@ -485,4 +485,46 @@ mod tests {
             std::fs::write(format!("{out}.mesh.json"), json.to_string()).unwrap();
         }
     }
+
+    /// Manual run: build `OCS_PART_JSON` at the origin and save it to
+    /// `OCS_PART_OUT` (.dwg) with its triangles in `<out>.mesh.json`.
+    #[test]
+    fn manual_part_from_env() {
+        let (Ok(def), Ok(out)) = (
+            std::env::var("OCS_PART_JSON"),
+            std::env::var("OCS_PART_OUT"),
+        ) else {
+            return;
+        };
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        let i = app.active_tab;
+        app.tabs[i].scene.document.header.insertion_units = 4;
+        let part = parse_part(&std::fs::read_to_string(def).unwrap()).unwrap();
+        app.open_ai_part();
+        let st = app.ai_part.as_mut().unwrap();
+        st.set_part(part);
+        st.origin = Some([0.0, 0.0, 0.0]);
+        eprintln!("{}", app.ai_part_insert().expect("builds"));
+        let s = solids(&mut app);
+        let (vol, size) = measure(&mut app, &s[0]);
+        eprintln!("PART {} solid(s), volume {vol:.1}, size {size:?}", s.len());
+        let h = codec::Handle::new(u64::from_str_radix(&s[0], 16).unwrap());
+        app.tabs[i].scene.restore_solid_models(&[h]);
+        let body = app.tabs[i].scene.solid_models.get(&h).cloned().unwrap();
+        let mesh = kernel::brep::mesh::tessellate(
+            &body,
+            kernel::brep::mesh::TessellationTolerance::new(
+                kernel::tessellation::DEFAULT_ANGLE,
+                1e-9,
+            ),
+        );
+        let json =
+            serde_json::json!({"positions": mesh.mesh.positions, "triangles": mesh.mesh.triangles});
+        std::fs::write(format!("{out}.mesh.json"), json.to_string()).unwrap();
+        eprintln!(
+            "{}",
+            app.automation_op(&serde_json::json!({"op":"save","path":out}).to_string())
+        );
+    }
 }
