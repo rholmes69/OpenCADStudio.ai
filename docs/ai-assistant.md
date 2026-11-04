@@ -200,6 +200,12 @@ tees, cross holes and flanges on side branches are built — for example a
 DN100 flanged tee with the run along X, the branch along Y and eight bolt
 holes on each of the three flanges.
 
+A linear pattern may step along the body's own axis with `dz` — a stack of
+45 cooler fins is one body with `"linear": {"count": 45, "dz": 2.2}`.
+Added bodies are joined one body (with all its pattern copies) at a time,
+in the order written; if a join fails, putting small parts that meet a
+curved surface earlier in the list often helps.
+
 Review the parameters before anything is drawn. Each field takes a number or
 an expression of other parameters (`D/2 + 5`), and sizes that depend on one
 you change follow it. A value that would make a body impossible — a negative

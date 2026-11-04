@@ -273,6 +273,8 @@ pub struct Instance {
     pub axis: Axis,
     /// The pattern offset in the body's own frame (`at` = base + axis(local)).
     pub local: [f64; 3],
+    /// Index of the definition body this instance comes from.
+    pub body: usize,
     /// Rotation about Z in degrees (from a circular pattern or `rotate`).
     pub rotate: f64,
     pub label: String,
@@ -639,6 +641,11 @@ pub fn instances(part: &Part) -> Result<Vec<Instance>, String> {
                     .map(|y| val(y, &vars, &what("pattern dy")))
                     .transpose()?
                     .unwrap_or(0.0);
+                let dz = l
+                    .get("dz")
+                    .map(|z| val(z, &vars, &what("pattern dz")))
+                    .transpose()?
+                    .unwrap_or(0.0);
                 let rows = l
                     .get("rows")
                     .map(|r| val(r, &vars, &what("pattern rows")))
@@ -655,7 +662,11 @@ pub fn instances(part: &Part) -> Result<Vec<Instance>, String> {
                     .flat_map(|r| {
                         (0..count.max(1)).map(move |k| {
                             (
-                                [dx * k as f64, dy * k as f64 + row_dy * r as f64, 0.0],
+                                [
+                                    dx * k as f64,
+                                    dy * k as f64 + row_dy * r as f64,
+                                    dz * k as f64,
+                                ],
                                 rotate,
                             )
                         })
@@ -673,6 +684,7 @@ pub fn instances(part: &Part) -> Result<Vec<Instance>, String> {
                 at: [at[0] + t[0], at[1] + t[1], at[2] + t[2]],
                 axis,
                 local,
+                body: n,
                 rotate: r,
                 label: if k == 0 {
                     label.clone()
@@ -755,6 +767,7 @@ pub fn plan(part: &Part, origin: [f64; 3], restore_layer: &str) -> Result<Vec<Va
     steps.push(json!({"op":"sysvar","set":{"clayer":LAYER}}));
     steps.push(json!({"op":"entities_delete","handles":"$anchor"}));
     let mut names: Vec<(BodyOp, String)> = Vec::new();
+    let mut add_groups: Vec<(usize, Vec<String>)> = Vec::new();
     for (n, inst) in insts.iter().enumerate() {
         let name = format!("b{n}");
         let profile_name = format!("{name}_profile");
@@ -819,6 +832,12 @@ pub fn plan(part: &Part, origin: [f64; 3], restore_layer: &str) -> Result<Vec<Va
         if v.iter().any(|x| x.abs() > 1e-12) {
             steps.push(json!({"op":"entities_transform","handles":format!("${name}"),"action":"move","vector":v}));
         }
+        if inst.op == BodyOp::Add {
+            match add_groups.last_mut() {
+                Some((b, g)) if *b == inst.body => g.push(format!("${name}")),
+                _ => add_groups.push((inst.body, vec![format!("${name}")])),
+            }
+        }
         names.push((inst.op, name));
     }
     let group = |op: BodyOp| {
@@ -832,13 +851,39 @@ pub fn plan(part: &Part, origin: [f64; 3], restore_layer: &str) -> Result<Vec<Va
     let cuts = group(BodyOp::Cut);
     let ints = group(BodyOp::Intersect);
     let mut part_ref = adds[0].clone();
-    if adds.len() > 1 {
+    // Join body by body (each with all its pattern copies): one UNION of
+    // many touching pieces is far more likely to fail than a chain of
+    // smaller ones.
+    let labels: Vec<String> = part.source["bodies"]
+        .as_array()
+        .map(|b| {
+            b.iter()
+                .enumerate()
+                .map(|(n, x)| {
+                    x["name"]
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or(format!("body {}", n + 1))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut acc: Option<String> = None;
+    for (k, (body, group)) in add_groups.iter().enumerate() {
+        let mut handles: Vec<String> = acc.iter().cloned().collect();
+        handles.extend(group.iter().cloned());
+        if handles.len() < 2 {
+            acc = handles.pop();
+            continue;
+        }
+        let bind = format!("united{k}");
         steps.push(json!({"op":"start","cmd":"UNION"}));
-        steps.push(json!({"op":"input","kind":"selection","handles":adds}));
-        steps.push(
-            json!({"op":"input","kind":"enter","bind":"united","note":"join the added bodies"}),
-        );
-        part_ref = "$united".into();
+        steps.push(json!({"op":"input","kind":"selection","handles":handles}));
+        steps.push(json!({"op":"input","kind":"enter","bind":bind,"note":format!("join {}", labels.get(*body).map(String::as_str).unwrap_or("the added bodies"))}));
+        acc = Some(format!("${bind}"));
+    }
+    if let Some(a) = acc {
+        part_ref = a;
     }
     if !cuts.is_empty() {
         // SUBTRACT keeps the base solid's handle.
@@ -921,7 +966,7 @@ Shapes (sizes are numbers or expressions over the parameters, e.g. "d/2 + 1"):
 - "prism": {{"sides": n, "across_flats": .. (or "d": circumscribed diameter), "h": ..}} — regular polygon, base at z
 - "extrude": {{"points": [[x, y], ...], "h": ..}} — closed XY profile relative to "at", extruded up
 - "revolve": {{"points": [[r, z], ...]}} — closed half-section (radius ≥ 0, z) turned a full circle about the Z axis through "at"
-Patterns: {{"circular": {{"count": n, "radius": .., "start_deg": .., "sweep_deg": 360}}}} or {{"linear": {{"count": n, "dx": .., "dy": .., "rows": m, "row_dy": ..}}}}.
+Patterns: {{"circular": {{"count": n, "radius": .., "start_deg": .., "sweep_deg": 360}}}} or {{"linear": {{"count": n, "dx": .., "dy": .., "dz": .., "rows": m, "row_dy": ..}}}} ("dz" steps along the body's own axis: stacks of fins or plates).
 
 The first body must be "add". All "add" bodies are joined, then "cut" bodies removed, then "intersect" bodies applied. Z is up; put the part on z = 0. Use real standard sizes (ISO metric threads, DIN/ISO hex sizes, ASME where the user asks) and name every important size as a parameter so it can be edited later. Threads are modelled as plain cylinders at the nominal diameter; mention that in "notes". Expressions support + - * / ^ ( ) sqrt sin cos tan (degrees) min max abs round pi.
 If the request is not a part you can build this way, answer {{"message": "<why>", "bodies": []}}."#
@@ -989,6 +1034,26 @@ mod tests {
         assert_eq!(i.len(), 1 + 6 + 6);
         assert!((i[2].at[0] - 25.0 * 60f64.to_radians().cos()).abs() < 1e-9);
         assert_eq!(i[12].at, [-20.0, -25.0, 0.0]);
+    }
+
+    #[test]
+    fn a_linear_pattern_can_stack_along_the_axis() {
+        let p = parse_part(
+            r#"{"bodies":[{"op":"add","box":{"w":10,"d":10,"h":0.5},"at":[0,0,2],
+            "pattern":{"linear":{"count":4,"dz":2}}}]}"#,
+        )
+        .unwrap();
+        let i = instances(&p).unwrap();
+        assert_eq!(i[3].at, [0.0, 0.0, 8.0]);
+        let (lo, hi) = extents(&i);
+        assert_eq!((lo[2], hi[2]), (2.0, 8.5));
+        // Along a tilted axis the stack follows it.
+        let p = parse_part(
+            r#"{"bodies":[{"op":"add","cylinder":{"d":4,"h":1},"axis":"x",
+            "pattern":{"linear":{"count":3,"dz":5}}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(instances(&p).unwrap()[2].at, [10.0, 0.0, 0.0]);
     }
 
     #[test]
